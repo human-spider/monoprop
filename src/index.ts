@@ -1,5 +1,10 @@
 import { debounce, throttle } from "tiny-throttle";
-import { isPlainObject } from "./helpers";
+
+function isPlainObject(obj) {
+  if (!obj) return false;
+  const prototype = Object.getPrototypeOf(obj);
+  return prototype === null || prototype.constructor === Object;
+}
 
 const bindingsCache = new WeakMap<Prop<any>, object>();
 const deepBindingsCache = new WeakMap<Prop<any>, object>();
@@ -8,21 +13,26 @@ type PropBindings<T extends object> = {
   [K in keyof T]: Prop<T[K]>
 }
 
-const of = <T extends object>(property: Prop<T>): PropBindings<T> => {
+export const of = <T extends object>(property: Prop<T>): PropBindings<T> => {
   let proxy = bindingsCache.get(property);
   if (!proxy) {
     const propCache = {} as PropBindings<T>;
     proxy = new Proxy(propCache, {
       get(target: typeof propCache, prop: string | symbol): Prop<any> {
+        let prop$;
+        // get prop from cache
+        if (target.hasOwnProperty(prop)) {
+          prop$ = Reflect.get(...arguments);
+        }
         const propName = String(prop);
-        let prop$ = target[propName];
-        if (!prop$) {
+        if (!prop$ || prop$.isEnded) {
           prop$ = property.bind(get(propName as keyof T), set(propName as keyof T));
-          target[propName] = prop$;
+          propCache[propName] = prop$;
         }
         return prop$;
       }
     })
+    bindingsCache.set(property, proxy);
   }
   return proxy as PropBindings<T>;
 }
@@ -35,7 +45,7 @@ type DeepPropBindings<T extends object> = {
   $: Prop<T>
 }
 
-const into = <T extends object>(property: Prop<T>): DeepPropBindings<T> => {
+export const into = <T extends object>(property: Prop<T>): DeepPropBindings<T> => {
   let proxy = deepBindingsCache.get(property);
   let path: string[] = []
   if (!proxy) {
@@ -44,16 +54,24 @@ const into = <T extends object>(property: Prop<T>): DeepPropBindings<T> => {
       get(target: typeof propCache, prop: string | symbol): Prop<any> | DeepPropBindings<T> {
         const propName = String(prop);
         if (propName === '$') {
-          return property.bind(
-            value => deepGet(value, path),
-            (value, chunk) => deepSet(value, path, chunk)
-          ) 
+          const cacheKey = '.' + path.join('.')
+          let cached = propCache[cacheKey]
+          if (!cached || cached.isEnded) {
+            const localPath = [...path]
+            propCache[cacheKey] = property.bind(
+              value => deepGet(value, localPath),
+              (value, chunk) => deepSet(value, localPath, chunk)
+            )
+          }
+          path.length = 0
+          return propCache[cacheKey]
         } else {
           path.push(propName);
-          return target;
+          return proxy;
         }
       }
     })
+    deepBindingsCache.set(property, proxy);
   }
   return proxy as DeepPropBindings<T>;
 }
@@ -188,7 +206,7 @@ export const compose = <T extends Array<Prop<any>>>(...props: T): ComposedProp<T
   for (let i = 0; i < props.length; i++) {
     res.push((props[i]).value);
   }
-  const prop = Prop.from(res) as unknown as ComposedProp<T>;
+  const prop = new Prop(res) as unknown as ComposedProp<T>;
   for (let i = 0; i < props.length; i++) {
     props[i].subscribe(x => {
       res[i] = x;
@@ -214,7 +232,7 @@ export const composeObject = <T extends ObjectWithProps>(template: T): Prop<Comp
       props.push([path, x]);
     }
   });
-  const prop = Prop.from(res);
+  const prop = new Prop(res);
   for (let i = 0; i < props.length; i++) {
     props[i][1].subscribe((newValue) => {
       deepSet(res, props[i][0], newValue);
@@ -265,12 +283,13 @@ interface PropUpdater<T, K> {
 type Nullable<T> = T | null
 
 export class Prop<T> {
-  protected callbacks: { [arg: string]: PropCallback<T> } = {};
+  protected callbacks: { [key: number]: PropCallback<T> } = {};
   protected endCallbacks: Function[] = [];
   protected ended = false;
   protected currentValue: T;
   protected initialized: boolean = false;
   protected errorProp: Nullable<Prop<Nullable<Error>>> = null;
+  protected subscriberCount = 0;
 
   static pending<T>(): Prop<T> {
     return new Prop(null as T, false);
@@ -319,7 +338,7 @@ export class Prop<T> {
     if (this.ended) {
       return () => {}
     }
-    const key = crypto.randomUUID();
+    const key = String(this.subscriberCount++);
     this.callbacks[key] = callback;
     this.runCallback(key, this.currentValue);
     return () => {
@@ -339,6 +358,16 @@ export class Prop<T> {
     const prop: Prop<T> = Prop.pending();
     prop.onEnd(this.subscribe(value => {
       if (filterFn(value)) {
+        prop.next(value);
+      }
+    }));
+    return prop;
+  }
+
+  uniq(): Prop<T> {
+    const prop: Prop<T> = Prop.pending();
+    prop.onEnd(this.subscribe(value => {
+      if (prop.value !== value) {
         prop.next(value);
       }
     }));
@@ -388,6 +417,10 @@ export class Prop<T> {
     return this.getError();
   }
 
+  get isEnded() {
+    return this.ended;
+  }
+
   end() {
     this.ended = true;
     const keys = Object.keys(this.callbacks);
@@ -424,30 +457,3 @@ export class Prop<T> {
     }
   }
 }
-
-const p1 = new Prop(1);
-const p2 = new Prop({foo: 'bar', gg: 2, inner: {foo: 'bar', bar: 0}});
-const composed = compose(p1, p2);
-const composedObj = composeObject({
-  p1, foo: {p2},
-})
-const ppp = composedObj.map(x => x.foo.p2.inner.bar)
-p2.map(x => x.gg)
-  .subscribe(x => p2.update((y) => y.gg = x))
-
-p2.bind(
-  x => x.gg,
-  (x, y) => x.gg = y
-)
-
-const b = p2.bind(get('gg'), set('gg'))
-const g = p2.map(get('gg'))
-const foo = of(p2).gg
-const deep = p2.bind(
-  x => x.inner.bar,
-  (x,y) => { x.inner.bar = y }
-) 
-const deep2 = into(p2).foo.$
-const deep3: Prop<object> = p2.map(x => deepGet(x, ['inner']))
-const deep4 = p2.map(x => x.inner.bar)
-const got: object = deepGet(val, ['inner'])
