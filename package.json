@@ -1,0 +1,17 @@
+{
+  "name": "monoprop",
+  "version": "0.1.0",
+  "description": "Simplified reactive primitive",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Mykhailo Gryshchenko",
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.15.10"
+  },
+  "dependencies": {
+    "tiny-throttle": "^1.0.3"
+  }
+}
