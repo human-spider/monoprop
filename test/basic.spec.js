@@ -33,6 +33,7 @@ test('pending Prop has undefined value and does not notify subscribers until ini
   prop.subscribe(x => {
     notified = x
   })
+  t.is(prop.value, undefined)
   t.is(notified, -1, 'subscriber was notified of initial value on pending Prop')
   prop.value = 1
   t.is(notified, 1, 'subscriber was not notified of updated value on pending Prop')
