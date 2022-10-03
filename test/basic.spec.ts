@@ -29,11 +29,11 @@ test('Prop notifies subscribers when value is changed', t => {
 
 test('pending Prop has undefined value and does not notify subscribers until initialized', t => {
   let notified = -1
-  const prop = Prop.pending()
+  const prop = Prop.pending<number>()
   prop.subscribe(x => {
     notified = x
   })
-  t.is(prop.value, undefined)
+  t.is(prop.value, undefined as any)
   t.is(notified, -1, 'subscriber was notified of initial value on pending Prop')
   prop.value = 1
   t.is(notified, 1, 'subscriber was not notified of updated value on pending Prop')
@@ -49,7 +49,7 @@ test('subscribe() call returns unsubscribe function', t => {
   unsub()
   prop.value = 1
   t.is(notified, 0, 'subscriber was notified after unsubscribing')
-  t.is(Object.keys(prop.callbacks).length, 0, 'callback was not cleared after unsubscribing')
+  t.is(Object.keys(prop['callbacks']).length, 0, 'callback was not cleared after unsubscribing')
 })
 
 test('ended Prop does not notify subscribers', t => {
@@ -73,8 +73,8 @@ test('ended Prop', t => {
   prop.end()
   t.true(ended, 'end callback was not called')
   t.true(prop.isEnded, 'isEnded property was not updated')
-  t.is(Object.keys(prop.callbacks).length, 0)
-  t.is(prop.endCallbacks.length, 0)
+  t.is(Object.keys(prop['callbacks']).length, 0)
+  t.is(prop['endCallbacks'].length, 0)
 })
 
 test('filtering props', t => {
@@ -104,7 +104,7 @@ test('unique prop values', t => {
   prop.value = 2
   t.is(notifiedTimes, 2);
   uniq.end();
-  t.is(Object.keys(prop.callbacks).length, 0, 'callback was not cleared after uniq ended')
+  t.is(Object.keys(prop['callbacks']).length, 0, 'callback was not cleared after uniq ended')
 })
 
 test('mapping props', t => {
@@ -119,12 +119,12 @@ test('mapping props', t => {
   prop.value = 3
   t.is(notified, 9);
   mapped.end();
-  t.is(Object.keys(prop.callbacks).length, 0, 'callback was not cleared after mapped ended')
+  t.is(Object.keys(prop['callbacks']).length, 0, 'callback was not cleared after mapped ended')
 })
 
 test('mapping unique prop values', t => {
   let notifiedTimes = 0, notified = -1
-  const prop = Prop.pending()
+  const prop = Prop.pending<number>()
   const mapped = prop.mapUniq(x => x*x)
   mapped.subscribe(x => { notified = x; notifiedTimes++ })
   prop.value = 1
@@ -135,7 +135,7 @@ test('mapping unique prop values', t => {
   t.is(notifiedTimes, 2);
   t.is(notified, 4);
   mapped.end();
-  t.is(Object.keys(prop.callbacks).length, 0, 'callback was not cleared after mapped ended')
+  t.is(Object.keys(prop['callbacks']).length, 0, 'callback was not cleared after mapped ended')
 })
 
 test('merging prop into another prop', t => {
@@ -165,7 +165,7 @@ test('prop with error', t => {
 })
 
 test('update object using update method', t => {
-  let notified = {}
+  let notified = { badger: '' }
   const prop = new Prop({ badger: 'badger' })
   prop.subscribe(x => { notified = x })
   prop.update(x => {
@@ -175,7 +175,7 @@ test('update object using update method', t => {
 })
 
 test('update object using tap method', t => {
-  let notified = {}
+  let notified = { badger: '' }
   const prop = new Prop({ badger: 'badger' })
   prop.subscribe(x => { notified = x })
   prop.value.badger = 'mushroom'

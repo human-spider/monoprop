@@ -18,11 +18,11 @@ export const of = <T extends object>(property: Prop<T>): PropBindings<T> => {
   if (!proxy) {
     const propCache = {} as PropBindings<T>;
     proxy = new Proxy(propCache, {
-      get(target: typeof propCache, prop: string | symbol): Prop<any> {
+      get(target: typeof propCache, prop: string | symbol, receiver?: any): Prop<any> {
         let prop$;
         // get prop from cache
         if (target.hasOwnProperty(prop)) {
-          prop$ = Reflect.get(...arguments);
+          prop$ = Reflect.get(target, prop, receiver);
         }
         const propName = String(prop);
         if (!prop$ || prop$.isEnded) {
@@ -67,7 +67,7 @@ export const into = <T extends object>(property: Prop<T>): DeepPropBindings<T> =
           return propCache[cacheKey]
         } else {
           path.push(propName);
-          return proxy;
+          return proxy as DeepPropBindings<T>;
         }
       }
     })
@@ -101,6 +101,7 @@ export const mergeEvent = <T extends Event>(bus: Prop<T>, target: Node, eventNam
     }
   }
   if (options.debounce && Number(options.debounce) > 0) {
+    // @ts-ignore - incorrect type definitions in tiny-throttle
     callback = debounce(callback, options.debounce, options.debounceLeading);
   } else if (options.throttle && Number(options.throttle) > 0) {
     callback = throttle(callback, options.throttle);

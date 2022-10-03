@@ -13,10 +13,10 @@ var of = (property) => {
   if (!proxy) {
     const propCache = {};
     proxy = new Proxy(propCache, {
-      get(target, prop) {
+      get(target, prop, receiver) {
         let prop$;
         if (target.hasOwnProperty(prop)) {
-          prop$ = Reflect.get(...arguments);
+          prop$ = Reflect.get(target, prop, receiver);
         }
         const propName = String(prop);
         if (!prop$ || prop$.isEnded) {

@@ -2,7 +2,7 @@ import test from 'ava'
 import { Prop, get, set, of, into } from "../src/index.js"
 
 test('two way binding with bind method', t => {
-  let notified = {}, bound = {}
+  let notified = { badger: '' }, bound = ''
   const prop = new Prop({ badger: 'badger' })
   const unsub = prop.subscribe(x => { notified = x })
   const badger = prop.bind(
@@ -16,11 +16,11 @@ test('two way binding with bind method', t => {
   t.is(notified.badger, 'snake', 'parent prop was not updated')
   badger.end();
   unsub();
-  t.is(Object.keys(prop.callbacks).length, 0, 'callback was not cleared after bound ended')
+  t.is(Object.keys(prop['callbacks']).length, 0, 'callback was not cleared after bound ended')
 })
 
 test('two way binding with bind method using getter and setter', t => {
-  let notified = {}, bound = {}
+  let notified = { badger: '' }, bound = ''
   const prop = new Prop({ badger: 'badger' })
   const unsub = prop.subscribe(x => { notified = x })
   const badger = prop.bind(
@@ -34,11 +34,11 @@ test('two way binding with bind method using getter and setter', t => {
   t.is(notified.badger, 'snake', 'parent prop was not updated')
   badger.end();
   unsub();
-  t.is(Object.keys(prop.callbacks).length, 0, 'callback was not cleared after bound ended')
+  t.is(Object.keys(prop['callbacks']).length, 0, 'callback was not cleared after bound ended')
 })
 
 test('two way binding with of helper', t => {
-  let notified = {}, bound = {}
+  let notified = { badger: '' }, bound = ''
   const prop = new Prop({ badger: 'badger' })
   const unsub = prop.subscribe(x => { notified = x })
   const badger = of(prop).badger
@@ -50,7 +50,7 @@ test('two way binding with of helper', t => {
   t.is(of(prop).badger, badger, 'bound was not cached')
   badger.end();
   unsub();
-  t.is(Object.keys(prop.callbacks).length, 0, 'callback was not cleared after bound ended')
+  t.is(Object.keys(prop['callbacks']).length, 0, 'callback was not cleared after bound ended')
   badger.value = 'mushroom'
   t.is(bound, 'snake', 'bound was updated after it ended')
   t.not(of(prop).badger, badger, 'bound was not restarted after accessed through of helper after previous prop ended')
@@ -60,7 +60,7 @@ test('two way binding with of helper', t => {
 })
 
 test('deep two way binding with into helper', t => {
-  let notified = {}, bound = {}
+  let notified = { inner: { badger: '' } }, bound = ''
   const prop = Prop.from({ inner: { badger: 'badger' } })
   const unsub = prop.subscribe(x => { notified = x })
   const badger = into(prop).inner.badger.$
@@ -74,7 +74,7 @@ test('deep two way binding with into helper', t => {
   t.is(into(prop).inner.badger.$, badger, 'bound was not cached')
   badger.end();
   unsub();
-  t.is(Object.keys(prop.callbacks).length, 0, 'callback was not cleared after bound ended')
+  t.is(Object.keys(prop['callbacks']).length, 0, 'callback was not cleared after bound ended')
   badger.value = 'mushroom'
   t.is(bound, 'snake', 'bound was updated after it ended')
   t.not(into(prop).inner.badger.$, badger, 'bound was not restarted after accessed through of helper after previous prop ended')
