@@ -43,7 +43,7 @@ test('compose all pending', t => {
 test('compose ignores static values', t => {
   const num = Prop.pending<number>()
   const str = Prop.pending<string>()
-  const composed = compose(num, str, 'snake')
+  const composed = compose(num, str, 'snake' as any)
   let notified = new Array()
   composed.subscribe(x => { notified = x })
   t.deepEqual(notified, [], 'composed prop all pending with static value was initialized')
@@ -95,7 +95,7 @@ test('composeObject all pending', t => {
 test('composeObject ignores static values', t => {
   const num = Prop.pending<number>()
   const str = Prop.pending<string>()
-  const composed = composeObject({num, deep: {str, static: 'snake'}})
+  const composed = composeObject({num, deep: {str, static: 'snake'}} as any)
   let notified = new Object()
   composed.subscribe(x => { notified = x })
   t.deepEqual(notified, {}, 'composed object prop all pending with static value was initialized')

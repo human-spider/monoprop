@@ -20,6 +20,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var src_exports = {};
 __export(src_exports, {
   Prop: () => Prop,
+  asyncUpdate: () => asyncUpdate,
   compose: () => compose,
   composeObject: () => composeObject,
   every: () => every,
@@ -32,9 +33,9 @@ __export(src_exports, {
   mergePromise: () => mergePromise,
   not: () => not,
   of: () => of,
-  once: () => once,
   set: () => set,
-  some: () => some
+  some: () => some,
+  toPromise: () => toPromise
 });
 module.exports = __toCommonJS(src_exports);
 var import_throttle_debounce = require("throttle-debounce");
@@ -141,6 +142,24 @@ var mergePromise = (prop, promise) => {
     }
   });
 };
+var asyncUpdate = (prop, updateFn) => {
+  mergePromise(prop, updateFn(prop.value));
+};
+var toPromise = (prop) => {
+  return new Promise((resolve, reject) => {
+    const unsub = prop.subscribe((x) => {
+      resolve(x);
+      unsub();
+      errorUnsub();
+    }, false);
+    let errorSkipNext = prop.error.isInitialized;
+    const errorUnsub = prop.error.subscribe((x) => {
+      reject(x);
+      unsub();
+      errorUnsub();
+    }, false);
+  });
+};
 var walkObject = (x, basePath, callback) => {
   const keys = Object.keys(x);
   for (let i = 0; i < keys.length; i++) {
@@ -183,14 +202,26 @@ var merge = (...props) => {
 var compose = (...props) => {
   const res = [];
   for (let i = 0; i < props.length; i++) {
-    res.push(props[i].value);
+    if (props[i] instanceof Prop) {
+      res.push(props[i].value);
+    } else {
+      res.push(props[i]);
+    }
   }
-  const prop = new Prop(res);
+  const allPending = !props.find((x) => x.isInitialized);
+  let prop;
+  if (allPending) {
+    prop = Prop.pending();
+  } else {
+    prop = new Prop(res);
+  }
   for (let i = 0; i < props.length; i++) {
-    props[i].subscribe((x) => {
-      res[i] = x;
-      prop.next(res);
-    });
+    if (props[i] instanceof Prop) {
+      props[i].subscribe((x) => {
+        res[i] = x;
+        prop.next(res);
+      });
+    }
   }
   return prop;
 };
@@ -200,9 +231,17 @@ var composeObject = (template) => {
     if (x instanceof Prop) {
       deepSet(res, path, x.value);
       props.push([path, x]);
+    } else {
+      deepSet(res, path, x);
     }
   });
-  const prop = new Prop(res);
+  const allPending = !props.find((x) => x[1].isInitialized);
+  let prop;
+  if (allPending) {
+    prop = Prop.pending();
+  } else {
+    prop = new Prop(res);
+  }
   for (let i = 0; i < props.length; i++) {
     props[i][1].subscribe((newValue) => {
       deepSet(res, props[i][0], newValue);
@@ -220,10 +259,6 @@ var every = (...props) => {
 var some = (...props) => {
   return compose(...props).map((x) => x.some((x2) => x2));
 };
-var once = (prop) => {
-  prop.subscribe(() => prop.end());
-  return prop;
-};
 var get = (key) => (value) => value[key];
 var set = (key) => (value, chunkValue) => {
   if (value[key] !== chunkValue) {
@@ -240,15 +275,12 @@ var Prop = class {
     this.subscriberCount = 0;
     this.set = this.next;
     this.watch = this.subscribe;
-    if (initialize && value !== null) {
+    if (initialize && value !== void 0) {
       this.setCurrentValue(value);
     }
   }
-  static from(value) {
-    return new Prop(value);
-  }
   static pending() {
-    return new Prop(null, false);
+    return new Prop(void 0, false);
   }
   set value(value) {
     this.next(value);
@@ -259,9 +291,12 @@ var Prop = class {
   get value() {
     return this.getValue();
   }
+  get isInitialized() {
+    return this.initialized;
+  }
   next(value) {
     this.setCurrentValue(value);
-    if (this.errorProp !== null && this.error.value !== null) {
+    if (this.errorProp !== null && this.errorProp.isInitialized) {
       this.error.set(null);
     }
     for (let key in this.callbacks) {
@@ -269,20 +304,24 @@ var Prop = class {
     }
   }
   tap() {
-    this.next(this.currentValue);
+    if (this.isInitialized) {
+      this.next(this.currentValue);
+    }
   }
   update(updateFn) {
     updateFn(this.currentValue);
     this.tap();
   }
-  subscribe(callback) {
+  subscribe(callback, notifyImmediately = true) {
     if (this.ended) {
       return () => {
       };
     }
     const key = String(this.subscriberCount++);
     this.callbacks[key] = callback;
-    this.runCallback(key, this.currentValue);
+    if (notifyImmediately) {
+      this.runCallback(key, this.currentValue);
+    }
     return () => {
       this.unsubscribe(key);
     };
@@ -293,7 +332,7 @@ var Prop = class {
     }
   }
   filter(filterFn) {
-    const prop = Prop.pending();
+    const prop = this.deriveProp();
     prop.onEnd(this.subscribe((value) => {
       if (filterFn(value)) {
         prop.next(value);
@@ -302,7 +341,7 @@ var Prop = class {
     return prop;
   }
   uniq() {
-    const prop = Prop.pending();
+    const prop = this.deriveProp(this.currentValue);
     prop.onEnd(this.subscribe((value) => {
       if (prop.value !== value) {
         prop.next(value);
@@ -311,12 +350,12 @@ var Prop = class {
     return prop;
   }
   map(mapper) {
-    const prop = Prop.pending();
+    const prop = this.deriveProp();
     prop.onEnd(this.subscribe((value) => prop.next(mapper(value))));
     return prop;
   }
   mapUniq(mapper) {
-    const prop = Prop.pending();
+    const prop = this.deriveProp();
     prop.onEnd(this.subscribe((value) => {
       const newValue = mapper(value);
       if (prop.value !== newValue) {
@@ -380,5 +419,8 @@ var Prop = class {
     if (this.initialized && this.callbacks[key]) {
       this.callbacks[key](value);
     }
+  }
+  deriveProp(initialValue = void 0) {
+    return new Prop(initialValue, this.initialized);
   }
 };

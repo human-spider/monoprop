@@ -26,7 +26,7 @@ export const of = <T extends object>(property: Prop<T>): PropBindings<T> => {
         }
         const propName = String(prop);
         if (!prop$ || prop$.isEnded) {
-          prop$ = property.bind(get(propName as keyof T), set(propName as keyof T));
+          prop$ = property.bind(get(propName as keyof T) as PropMapper<T, Definitely<T[keyof T]>>, set(propName as keyof T));
           propCache[propName] = prop$;
         }
         return prop$;
@@ -83,13 +83,13 @@ type useEventOptions = {
   transform?: (e: Event) => any
 }
 
-export const fromEvent = (target: Node, eventName: string, options: useEventOptions = {}): Prop<Event> => {
-  const prop: Prop<Event> = Prop.pending();
+export const fromEvent = (target: Node, eventName: string, options: useEventOptions = {}): Prop<Maybe<Event>> => {
+  const prop = Prop.pending<Event>();
   mergeEvent(prop, target, eventName, options);
   return prop;
 }
 
-export const mergeEvent = <T extends Event>(bus: Prop<T>, target: Node, eventName: string, options: useEventOptions = {}): void => {
+export const mergeEvent = <T extends Event>(bus: Prop<Maybe<T>>, target: Node, eventName: string, options: useEventOptions = {}): void => {
   let callback;
   if (options.transform && typeof options.transform === 'function') {
     callback = (event) => {
@@ -111,15 +111,15 @@ export const mergeEvent = <T extends Event>(bus: Prop<T>, target: Node, eventNam
   target.addEventListener(eventName, callback);
 }
 
-export const fromPromise = <T>(promise: Promise<T>): Prop<T> => {
-  const prop: Prop<T> = Prop.pending();
+export const fromPromise = <T>(promise: Promise<T>): Prop<Maybe<T>> => {
+  const prop = Prop.pending<T>();
   mergePromise(prop, promise);
   return prop;
 }
 
 export const mergePromise = <T>(prop: Prop<T>, promise: Promise<T>): void => {
   promise.then((value: T) => {
-    prop.next(value);
+    prop.next(value as Definitely<T>);
     prop.error.next(null);
   }).catch((error: any) => {
     if (error instanceof Error) {
@@ -183,8 +183,8 @@ const deepSet = (x: object, path: string[], value: unknown): void => {
   }
 }
 
-export const merge = <T>(...props: Prop<T>[]): Prop<T> => {
-  const prop: Prop<T> = Prop.pending();
+export const merge = <T>(...props: Prop<T>[]): Prop<Maybe<T>> => {
+  const prop = Prop.pending<T>();
   for (let i = 0; i < props.length; i++) {
     prop.onEnd(props[i].subscribe(x => {
       prop.next(x);
@@ -281,11 +281,11 @@ export const set = <T extends object, K extends keyof T>(key: K): SetterFn<T, K>
 }
 
 interface PropCallback<T> {
-  (arg: T): void
+  (arg: Definitely<T>): void
 }
 
 interface PropMapper<T, K> {
-  (arg: T): K
+  (arg: Definitely<T>): Definitely<K>
 }
 
 interface PropUpdater<T, K> {
@@ -294,6 +294,7 @@ interface PropUpdater<T, K> {
 
 type Nullable<T> = T | null
 type Maybe<T> = T | undefined
+type Definitely<T> = T extends Maybe<any> ? Exclude<T, undefined> : T
 
 export class Prop<T> {
   protected callbacks: { [key: number]: PropCallback<T> } = {};
@@ -301,21 +302,21 @@ export class Prop<T> {
   protected ended = false;
   protected currentValue: T;
   protected initialized: boolean = false;
-  protected errorProp: Nullable<Prop<Nullable<Error>>> = null;
+  protected errorProp: Nullable<Prop<Maybe<Nullable<Error>>>> = null;
   protected subscriberCount = 0;
 
-  static pending<T>(): Prop<T> {
-    return new Prop(null as T, false);
+  static pending<T>(): Prop<Maybe<T>> {
+    return new Prop<Maybe<T>>(undefined, false);
   }
 
-  constructor(value: Nullable<T>, initialize = true) {
-    if (initialize && value !== null) {
+  constructor(value: T, initialize = true) {
+    if (initialize && value !== undefined) {
       this.setCurrentValue(value);
     }
   }
 
   set value(value: T) {
-    this.next(value);
+    this.next(value as Definitely<T>);
   }
 
   getValue(): T {
@@ -330,9 +331,9 @@ export class Prop<T> {
     return this.initialized;
   }
 
-  next(value: T): void {
+  next(value: Definitely<T>): void {
     this.setCurrentValue(value);
-    if (this.errorProp !== null && this.errorProp.isInitialized) {
+    if (this.errorProp !== null && this.errorProp!.isInitialized) {
       this.error.set(null);
     }
     for (let key in this.callbacks) {
@@ -343,10 +344,12 @@ export class Prop<T> {
   set = this.next
 
   tap() {
-    this.next(this.currentValue);
+    if (this.isInitialized) {
+      this.next(this.currentValue as Definitely<T>);
+    }
   }
 
-  update(updateFn: (rawValue: Maybe<T>) => void): void {
+  update(updateFn: (value: T) => void): void {
     updateFn(this.currentValue);
     this.tap();
   }
@@ -374,7 +377,7 @@ export class Prop<T> {
   }
 
   filter(filterFn: (arg: T) => boolean): Prop<T> {
-    const prop: Prop<T> = Prop.pending();
+    const prop: Prop<T> = this.deriveProp();
     prop.onEnd(this.subscribe(value => {
       if (filterFn(value)) {
         prop.next(value);
@@ -384,7 +387,7 @@ export class Prop<T> {
   }
 
   uniq(): Prop<T> {
-    const prop: Prop<T> = Prop.pending();
+    const prop: Prop<T> = this.deriveProp(this.currentValue)
     prop.onEnd(this.subscribe(value => {
       if (prop.value !== value) {
         prop.next(value);
@@ -394,13 +397,13 @@ export class Prop<T> {
   }
 
   map<K>(mapper: PropMapper<T, K>): Prop<K> {
-    const prop: Prop<K> = Prop.pending();
+    const prop = this.deriveProp<K>();
     prop.onEnd(this.subscribe(value => prop.next(mapper(value))));
     return prop;
   }
 
   mapUniq<K>(mapper: PropMapper<T, K>): Prop<K> {
-    const prop: Prop<K> = Prop.pending();
+    const prop = this.deriveProp<K>();
     prop.onEnd(this.subscribe(value => {
       const newValue = mapper(value);
       if (prop.value !== newValue) {
@@ -428,11 +431,11 @@ export class Prop<T> {
     return prop;
   }
 
-  getError(): Prop<Nullable<Error>> {
+  getError(): Prop<Maybe<Nullable<Error>>> {
     return this.errorPropInstance;
   }
 
-  get error(): Prop<Nullable<Error>> {
+  get error(): Prop<Maybe<Nullable<Error>>> {
     return this.getError();
   }
 
@@ -463,9 +466,9 @@ export class Prop<T> {
     }
   }
   
-  protected get errorPropInstance(): Prop<Nullable<Error>> {
+  protected get errorPropInstance(): Prop<Maybe<Nullable<Error>>> {
     if (!this.errorProp) {
-      this.errorProp = Prop.pending<Nullable<Error>>();
+      this.errorProp = Prop.pending<Maybe<Nullable<Error>>>();
     }
     return this.errorProp;
   }
@@ -474,5 +477,9 @@ export class Prop<T> {
     if (this.initialized && this.callbacks[key]) {
       this.callbacks[key](value);
     }
+  }
+
+  protected deriveProp<K>(initialValue: K = undefined as K) {
+    return new Prop<K>(initialValue, this.initialized);
   }
 }

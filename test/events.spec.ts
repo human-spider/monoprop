@@ -3,16 +3,16 @@ import { JSDOM } from 'jsdom'
 import { Prop, mergeEvent, fromEvent } from "../src/index.js"
 import { sleep } from './helper.js'
 
-const { window } = new JSDOM()
-const document = window.document as HTMLElement 
+const { window } = new JSDOM() as { window: any }
+const document = window.document as Document
 
 test('fromEvent', t => {
-  let notified: Event | null = null
+  let notified: Event | null
   const prop = fromEvent(document, 'click')
   prop.subscribe(x => { notified = x })
   const event = new window.Event('click')
   document.dispatchEvent(event)
-  t.is(notified, event)
+  t.is(notified!, event)
 })
 
 test.serial('fromEvent with throttle', async t => {
@@ -58,13 +58,13 @@ test.serial('fromEvent with debounce leading', async t => {
 })
 
 test('mergeEvent', t => {
-  let notified: Event | null = null
+  let notified: Event | null
   const prop = Prop.pending<Event>()
   mergeEvent(prop, document, 'click')
   prop.subscribe(x => { notified = x })
   const event = new window.Event('click')
   document.dispatchEvent(event)
-  t.is(notified, event)
+  t.is(notified!, event)
 })
 
 test.serial('mergeEvent with throttle', async t => {

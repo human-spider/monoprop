@@ -178,7 +178,7 @@ test('prop with error', t => {
   t.is(error, null, 'error was not cleared when new value was pushed')
 })
 
-test('update object using update method', t => {
+test('update object prop using update method', t => {
   let notified = { badger: '' }, valueInCallback: Object
   const prop = new Prop({ badger: 'badger' })
   prop.subscribe(x => { notified = x })
@@ -186,8 +186,20 @@ test('update object using update method', t => {
     valueInCallback = {...x}
     x.badger = 'mushroom'
   })
-  t.deepEqual(valueInCallback, { badger: 'badger' })
+  t.deepEqual(valueInCallback!, { badger: 'badger' })
   t.is(notified.badger, 'mushroom', 'prop was not updated via update method')
+})
+
+test('update pending object prop using update method', t => {
+  let notified = { badger: '' }, valueInCallback: any
+  const prop = Prop.pending<typeof notified>()
+  prop.subscribe(x => { notified = x })
+  prop.update(x => {
+    valueInCallback = x
+    if (x) x.badger = 'mushroom'
+  })
+  t.is(valueInCallback!, undefined)
+  t.is(notified.badger, '', 'pending prop was updated via update method')
 })
 
 test('update object using tap method', t => {
