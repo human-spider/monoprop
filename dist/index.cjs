@@ -37,7 +37,7 @@ __export(src_exports, {
   some: () => some
 });
 module.exports = __toCommonJS(src_exports);
-var import_tiny_throttle = require("tiny-throttle");
+var import_throttle_debounce = require("throttle-debounce");
 function isPlainObject(obj) {
   if (!obj)
     return false;
@@ -115,9 +115,9 @@ var mergeEvent = (bus, target, eventName, options = {}) => {
     };
   }
   if (options.debounce && Number(options.debounce) > 0) {
-    callback = (0, import_tiny_throttle.debounce)(callback, options.debounce, options.debounceLeading);
+    callback = (0, import_throttle_debounce.debounce)(options.debounce, callback, { atBegin: !!options.debounceLeading });
   } else if (options.throttle && Number(options.throttle) > 0) {
-    callback = (0, import_tiny_throttle.throttle)(callback, options.throttle);
+    callback = (0, import_throttle_debounce.throttle)(options.throttle, callback);
   }
   bus.onEnd(() => {
     target.removeEventListener(eventName, callback);

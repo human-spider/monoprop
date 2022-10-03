@@ -1,5 +1,5 @@
 // src/index.ts
-import { debounce, throttle } from "tiny-throttle";
+import { throttle, debounce } from "throttle-debounce";
 function isPlainObject(obj) {
   if (!obj)
     return false;
@@ -77,9 +77,9 @@ var mergeEvent = (bus, target, eventName, options = {}) => {
     };
   }
   if (options.debounce && Number(options.debounce) > 0) {
-    callback = debounce(callback, options.debounce, options.debounceLeading);
+    callback = debounce(options.debounce, callback, { atBegin: !!options.debounceLeading });
   } else if (options.throttle && Number(options.throttle) > 0) {
-    callback = throttle(callback, options.throttle);
+    callback = throttle(options.throttle, callback);
   }
   bus.onEnd(() => {
     target.removeEventListener(eventName, callback);
