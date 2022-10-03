@@ -136,27 +136,17 @@ export const asyncUpdate = <T>(prop: Prop<T>, updateFn: (value: Maybe<T>) => Pro
 
 export const toPromise = <T>(prop: Prop<T>): Promise<T> => {
   return new Promise((resolve, reject) => {
-    // skip initial notification if prop is already initialized
-    let skipNext = prop.isInitialized
     const unsub = prop.subscribe(x => {
-      if (skipNext) {
-        skipNext = false
-        return
-      }
       resolve(x)
       unsub()
       errorUnsub()
-    })
+    }, false)
     let errorSkipNext = prop.error.isInitialized
     const errorUnsub = prop.error.subscribe(x => {
-      if (errorSkipNext) {
-        errorSkipNext = false
-        return
-      }
       reject(x)
       unsub()
       errorUnsub()
-    })
+    }, false)
   })
 }
 
@@ -279,11 +269,6 @@ export const every = (...props: Prop<any>[]): Prop<boolean> => {
 
 export const some = (...props: Prop<any>[]): Prop<boolean> => {
   return compose(...props).map((x: any[]) => x.some(x => x));
-}
-
-export const once = <T extends Prop<any>>(prop: T): T => {
-  prop.subscribe(() => { prop.end() }, false);
-  return prop;
 }
 
 type GetterFn<T extends object, K extends keyof T> = { (value: T): T[K] }
