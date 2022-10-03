@@ -61,7 +61,7 @@ test('two way binding with of helper', t => {
 
 test('deep two way binding with into helper', t => {
   let notified = { inner: { badger: '' } }, bound = ''
-  const prop = Prop.from({ inner: { badger: 'badger' } })
+  const prop = new Prop({ inner: { badger: 'badger' } })
   const unsub = prop.subscribe(x => { notified = x })
   const badger = into(prop).inner.badger.$
   badger.subscribe(x => { bound = x })

@@ -1,9 +1,11 @@
+import { once } from './../src/index';
 import test from 'ava'
 import { Prop } from "../src/index.js"
 
 test('Prop holds and returns value', t => {
   const prop = new Prop(0)
   t.is(prop.value, 0)
+  t.true(prop.isInitialized);
 })
 
 test('Prop provides methods to set value', t => {
@@ -27,12 +29,24 @@ test('Prop notifies subscribers when value is changed', t => {
   t.is(notified, 1, 'subscriber was not notified of updated value')
 })
 
+test('subscribe with no initial notification', t => {
+  let notified = -1
+  let prop = new Prop(0)
+  prop.subscribe(x => {
+    notified = x
+  }, false)
+  t.is(notified, -1, 'subscriber was notified of initial value with immediate notification disabled')
+  prop.value = 1
+  t.is(notified, 1, 'subscriber was not notified of updated value with immediate notification disabled')
+})
+
 test('pending Prop has undefined value and does not notify subscribers until initialized', t => {
   let notified = -1
   const prop = Prop.pending<number>()
   prop.subscribe(x => {
     notified = x
   })
+  t.false(prop.isInitialized)
   t.is(prop.value, undefined as any)
   t.is(notified, -1, 'subscriber was notified of initial value on pending Prop')
   prop.value = 1
@@ -157,6 +171,7 @@ test('prop with error', t => {
   const prop = new Prop(0)
   prop.subscribe(x => { notified = x })
   prop.error.subscribe(x => { error = x })
+  t.false(prop.error.isInitialized, 'error prop was initialized before receiving error')
   t.is(error, undefined, 'subscriber was notified of initial error value')
   prop.error.value = new Error()
   t.true(error instanceof Error, 'error subscriber was not notified');
@@ -165,12 +180,14 @@ test('prop with error', t => {
 })
 
 test('update object using update method', t => {
-  let notified = { badger: '' }
+  let notified = { badger: '' }, valueInCallback: Object
   const prop = new Prop({ badger: 'badger' })
   prop.subscribe(x => { notified = x })
   prop.update(x => {
+    valueInCallback = {...x}
     x.badger = 'mushroom'
   })
+  t.deepEqual(valueInCallback, { badger: 'badger' })
   t.is(notified.badger, 'mushroom', 'prop was not updated via update method')
 })
 
@@ -181,4 +198,24 @@ test('update object using tap method', t => {
   prop.value.badger = 'mushroom'
   prop.tap()
   t.is(notified.badger, 'mushroom', 'prop was not updated via tap method')
+})
+
+test('once helper pending', t => {
+  let notified = -1
+  const prop = once(Prop.pending<number>())
+  prop.subscribe(x => { notified = x })
+  t.false(prop.isEnded, 'pedning once prop ended before it was initialized')
+  prop.value = 1
+  t.is(notified, 1, 'once prop did not notify about new value')
+  t.true(prop.isEnded, 'once prop was not ended after receiving new value')
+})
+
+test('once helper initialized', t => {
+  let notified = -1
+  const prop = once(new Prop(0))
+  prop.subscribe(x => { notified = x })
+  t.false(prop.isEnded, 'once prop ended after initial value')
+  prop.value = 1
+  t.is(notified, 1, 'once prop did not notify about new value')
+  t.true(prop.isEnded, 'once prop was not ended after receiving new value')
 })

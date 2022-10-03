@@ -1,16 +1,10 @@
-import { fromEvent } from './../src/index'
 import test from 'ava'
 import { JSDOM } from 'jsdom'
-import { Prop, mergeEvent } from "../src/index.js"
+import { Prop, mergeEvent, fromEvent } from "../src/index.js"
+import { sleep } from './helper.js'
 
 const { window } = new JSDOM()
 const document = window.document as HTMLElement 
-
-const sleep = async ms => new Promise(resolve => {
-  window.setTimeout(() => {
-    resolve(null);
-  }, ms)
-})
 
 test('fromEvent', t => {
   let notified: Event | null = null

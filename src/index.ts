@@ -130,6 +130,36 @@ export const mergePromise = <T>(prop: Prop<T>, promise: Promise<T>): void => {
   });
 }
 
+export const asyncUpdate = <T>(prop: Prop<T>, updateFn: (value: Maybe<T>) => Promise<T>): void => {
+  mergePromise(prop, updateFn(prop.value))
+}
+
+export const toPromise = <T>(prop: Prop<T>): Promise<T> => {
+  return new Promise((resolve, reject) => {
+    // skip initial notification if prop is already initialized
+    let skipNext = prop.isInitialized
+    const unsub = prop.subscribe(x => {
+      if (skipNext) {
+        skipNext = false
+        return
+      }
+      resolve(x)
+      unsub()
+      errorUnsub()
+    })
+    let errorSkipNext = prop.error.isInitialized
+    const errorUnsub = prop.error.subscribe(x => {
+      if (errorSkipNext) {
+        errorSkipNext = false
+        return
+      }
+      reject(x)
+      unsub()
+      errorUnsub()
+    })
+  })
+}
+
 const walkObject = (x: object, basePath: Array<string>, callback: (value: any, path: string[]) => void): void => {
   const keys = Object.keys(x);
   for (let i = 0; i < keys.length; i++) {
@@ -149,17 +179,6 @@ const deepGet = <T extends object>(x: T, path: string[]): any => {
     const [key, ...rest] = path
     return deepGet(x[key], rest);
   }
-  // let level: object = x;
-  // for(let i = 0; i < path.length; i++) {
-  //   if (i === path.length - 1) {
-  //     return level[path[i]]
-  //   } else if (typeof level[path[i]] === 'object') {
-  //     level = level[path[i]];
-  //   } else {
-  //     return null;
-  //   }
-  // }
-  // return null;
 }
 
 const deepSet = (x: object, path: string[], value: unknown): void => {
@@ -172,18 +191,6 @@ const deepSet = (x: object, path: string[], value: unknown): void => {
     }
     deepSet(x[key], rest, value);
   }
-  // let level: object = x;
-  // for(let i = 0; i < path.length; i++) {
-  //   if (i === path.length - 1) {
-  //     Object.assign(level, { [path[i]]: value });
-  //     // level[path[i]] = value;
-  //   } else {
-  //     if (!level[path[i]]) {
-  //       level[path[i]] = {}
-  //     }
-  //     level = level[path[i]];
-  //   }
-  // }
 }
 
 export const merge = <T>(...props: Prop<T>[]): Prop<T> => {
@@ -204,14 +211,26 @@ type ComposedProp<T> = T extends Prop<any>[] ?
 export const compose = <T extends Array<Prop<any>>>(...props: T): ComposedProp<T> => {
   const res = [] as PropSubject<T[keyof T]>;
   for (let i = 0; i < props.length; i++) {
-    res.push((props[i]).value);
+    if (props[i] instanceof Prop) {
+      res.push((props[i]).value);
+    } else {
+      res.push((props[i]));
+    }
   }
-  const prop = new Prop(res) as unknown as ComposedProp<T>;
+  const allPending = !props.find(x => x.isInitialized)
+  let prop
+  if (allPending) {
+    prop = Prop.pending() as ComposedProp<T>
+  } else {
+    prop = new Prop(res) as unknown as ComposedProp<T>;
+  }
   for (let i = 0; i < props.length; i++) {
-    props[i].subscribe(x => {
-      res[i] = x;
-      prop.next(res as any[]);
-    });
+    if (props[i] instanceof Prop) {
+      props[i].subscribe(x => {
+        res[i] = x;
+        prop.next(res as any[]);
+      });
+    }
   }
   return prop;
 }
@@ -230,9 +249,17 @@ export const composeObject = <T extends ObjectWithProps>(template: T): Prop<Comp
     if (x instanceof Prop) {
       deepSet(res, path, x.value);
       props.push([path, x]);
+    } else {
+      deepSet(res, path, x)
     }
   });
-  const prop = new Prop(res);
+  const allPending = !props.find(x => x[1].isInitialized)
+  let prop
+  if (allPending) {
+    prop = Prop.pending<ComposedPropObject<T>>()
+  } else {
+    prop = new Prop(res);
+  }
   for (let i = 0; i < props.length; i++) {
     props[i][1].subscribe((newValue) => {
       deepSet(res, props[i][0], newValue);
@@ -242,20 +269,20 @@ export const composeObject = <T extends ObjectWithProps>(template: T): Prop<Comp
   return prop;
 }
 
-export const not = (prop: Prop<unknown>): Prop<boolean> => {
+export const not = (prop: Prop<any>): Prop<boolean> => {
   return prop.map(x => !x);
 }
 
-export const every = (...props: Prop<unknown>[]): Prop<boolean> => {
-  return compose(...props).map((x: unknown[]) => x.every(x => x));
+export const every = (...props: Prop<any>[]): Prop<boolean> => {
+  return compose(...props).map((x: any[]) => x.every(x => x));
 }
 
-export const some = (...props: Prop<unknown>[]): Prop<boolean> => {
-  return compose(...props).map((x: unknown[]) => x.some(x => x));
+export const some = (...props: Prop<any>[]): Prop<boolean> => {
+  return compose(...props).map((x: any[]) => x.some(x => x));
 }
 
 export const once = <T extends Prop<any>>(prop: T): T => {
-  prop.subscribe(() => prop.end());
+  prop.subscribe(() => { prop.end() }, false);
   return prop;
 }
 
@@ -281,6 +308,7 @@ interface PropUpdater<T, K> {
 }
 
 type Nullable<T> = T | null
+type Maybe<T> = T | undefined
 
 export class Prop<T> {
   protected callbacks: { [key: number]: PropCallback<T> } = {};
@@ -290,10 +318,6 @@ export class Prop<T> {
   protected initialized: boolean = false;
   protected errorProp: Nullable<Prop<Nullable<Error>>> = null;
   protected subscriberCount = 0;
-
-  static from<T>(value: T): Prop<T> {
-    return new Prop<T>(value);
-  }
 
   static pending<T>(): Prop<T> {
     return new Prop(null as T, false);
@@ -317,9 +341,13 @@ export class Prop<T> {
     return this.getValue();
   }
 
+  get isInitialized(): boolean {
+    return this.initialized;
+  }
+
   next(value: T): void {
     this.setCurrentValue(value);
-    if (this.errorProp !== null && this.error.value !== null) {
+    if (this.errorProp !== null && this.errorProp.isInitialized) {
       this.error.set(null);
     }
     for (let key in this.callbacks) {
@@ -333,18 +361,20 @@ export class Prop<T> {
     this.next(this.currentValue);
   }
 
-  update(updateFn: (rawValue: T) => void): void {
+  update(updateFn: (rawValue: Maybe<T>) => void): void {
     updateFn(this.currentValue);
     this.tap();
   }
 
-  subscribe(callback: PropCallback<T>): Function {
+  subscribe(callback: PropCallback<T>, notifyImmediately = true): Function {
     if (this.ended) {
       return () => {}
     }
     const key = String(this.subscriberCount++);
     this.callbacks[key] = callback;
-    this.runCallback(key, this.currentValue);
+    if (notifyImmediately) {
+      this.runCallback(key, this.currentValue);
+    }
     return () => {
       this.unsubscribe(key);
     };
