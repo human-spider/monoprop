@@ -1,10 +1,10 @@
-import esbuild from 'esbuild';
-import packageJson from './package.json' assert {type: 'json'};
+const esbuild = require('esbuild');
+const { dependencies } = require('./package.json')
 
 const config = {
     allowOverwrite: true,
     bundle: true,
-    external: Object.keys(packageJson.dependencies),
+    external: Object.keys(dependencies),
 }
 
 // build for iife
@@ -20,7 +20,7 @@ esbuild.build({
 esbuild.build({
     ...config,
     entryPoints: ['./src/index.ts'],
-    outfile: './dist/index.esm.js',
+    outfile: './dist/index.mjs',
     format: 'esm',
 })
     .catch(() => process.exit(1));
@@ -29,7 +29,7 @@ esbuild.build({
 esbuild.build({
     ...config,
     entryPoints: ['./src/index.ts'],
-    outfile: './dist/index.common.js',
-    format: 'esm',
+    outfile: './dist/index.cjs',
+    format: 'cjs',
 })
     .catch(() => process.exit(1));

@@ -1,5 +1,5 @@
 import test from 'ava'
-import { Prop, get, set, of, into } from "./dist/index.js"
+import { Prop, get, set, of, into } from "../src/index.js"
 
 test('two way binding with bind method', t => {
   let notified = {}, bound = {}
@@ -53,6 +53,7 @@ test('two way binding with of helper', t => {
   t.is(Object.keys(prop.callbacks).length, 0, 'callback was not cleared after bound ended')
   badger.value = 'mushroom'
   t.is(bound, 'snake', 'bound was updated after it ended')
+  t.not(of(prop).badger, badger, 'bound was not restarted after accessed through of helper after previous prop ended')
   of(prop).badger.subscribe(x => { bound = x })
   of(prop).badger.value = 'badger'
   t.is(bound, 'badger', 'bound was not restarted after accessed through of helper after previous prop ended')
@@ -60,7 +61,7 @@ test('two way binding with of helper', t => {
 
 test('deep two way binding with into helper', t => {
   let notified = {}, bound = {}
-  const prop = new Prop({ inner: { badger: 'badger' } })
+  const prop = Prop.from({ inner: { badger: 'badger' } })
   const unsub = prop.subscribe(x => { notified = x })
   const badger = into(prop).inner.badger.$
   badger.subscribe(x => { bound = x })
@@ -76,6 +77,7 @@ test('deep two way binding with into helper', t => {
   t.is(Object.keys(prop.callbacks).length, 0, 'callback was not cleared after bound ended')
   badger.value = 'mushroom'
   t.is(bound, 'snake', 'bound was updated after it ended')
+  t.not(into(prop).inner.badger.$, badger, 'bound was not restarted after accessed through of helper after previous prop ended')
   into(prop).inner.badger.$.subscribe(x => { bound = x })
   into(prop).inner.badger.$.value = 'badger'
   t.is(bound, 'badger', 'bound was not restarted after accessed through into helper after previous prop ended')

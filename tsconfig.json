@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "target": "es6",
+        "strictNullChecks": true,
+        "esModuleInterop": true,
+        "declaration": true,
+        "declarationDir": "dist",
+        "emitDeclarationOnly": true,
+        "moduleResolution": "Node"
+    },
+    "include": [
+        "src/**/*.ts",
+    ]
+}

@@ -1,5 +1,5 @@
 import test from 'ava'
-import { Prop } from "./dist/index.js"
+import { Prop } from "../src/index.js"
 
 test('Prop holds and returns value', t => {
   const prop = new Prop(0)

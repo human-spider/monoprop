@@ -291,6 +291,10 @@ export class Prop<T> {
   protected errorProp: Nullable<Prop<Nullable<Error>>> = null;
   protected subscriberCount = 0;
 
+  static from<T>(value: T): Prop<T> {
+    return new Prop<T>(value);
+  }
+
   static pending<T>(): Prop<T> {
     return new Prop(null as T, false);
   }
