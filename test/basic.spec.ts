@@ -1,4 +1,3 @@
-import { once } from './../src/index';
 import test from 'ava'
 import { Prop } from "../src/index.js"
 
@@ -198,24 +197,4 @@ test('update object using tap method', t => {
   prop.value.badger = 'mushroom'
   prop.tap()
   t.is(notified.badger, 'mushroom', 'prop was not updated via tap method')
-})
-
-test('once helper pending', t => {
-  let notified = -1
-  const prop = once(Prop.pending<number>())
-  prop.subscribe(x => { notified = x })
-  t.false(prop.isEnded, 'pedning once prop ended before it was initialized')
-  prop.value = 1
-  t.is(notified, 1, 'once prop did not notify about new value')
-  t.true(prop.isEnded, 'once prop was not ended after receiving new value')
-})
-
-test('once helper initialized', t => {
-  let notified = -1
-  const prop = once(new Prop(0))
-  prop.subscribe(x => { notified = x })
-  t.false(prop.isEnded, 'once prop ended after initial value')
-  prop.value = 1
-  t.is(notified, 1, 'once prop did not notify about new value')
-  t.true(prop.isEnded, 'once prop was not ended after receiving new value')
 })
