@@ -195,6 +195,19 @@
     }
     return prop;
   };
+  var subscribe = (props, callbackFn) => {
+    return compose(...props).subscribe((values) => {
+      callbackFn(...values);
+    });
+  };
+  var map = (props, mapperFn) => {
+    const prop = compose(...props);
+    return prop.map((values) => mapperFn(...values));
+  };
+  var filter = (props, filterFn) => {
+    const prop = compose(...props);
+    return prop.filter((values) => filterFn(...values));
+  };
   var composeObject = (template) => {
     const res = {}, props = new Array();
     walkObject(template, [], (x, path) => {
@@ -235,14 +248,17 @@
       value[key] = chunkValue;
     }
   };
+  var liftError = (prop) => {
+    return [prop, prop.error];
+  };
   var Prop = class {
     constructor(value, initialize = true) {
       this.callbacks = {};
       this.endCallbacks = [];
       this.ended = false;
       this.initialized = false;
-      this.errorProp = null;
       this.subscriberCount = 0;
+      this._error = null;
       this.set = this.next;
       this.watch = this.subscribe;
       if (initialize && value !== void 0) {
@@ -256,30 +272,30 @@
       this.next(value);
     }
     getValue() {
-      return this.currentValue;
+      return this._value;
     }
     get value() {
       return this.getValue();
+    }
+    getError() {
+      return this._error;
     }
     get isInitialized() {
       return this.initialized;
     }
     next(value) {
       this.setCurrentValue(value);
-      if (this.errorProp !== null && this.errorProp.isInitialized) {
-        this.error.set(null);
-      }
-      for (let key in this.callbacks) {
-        this.runCallback(key, value);
-      }
+      this._error = null;
+    }
+    setError(error) {
     }
     tap() {
       if (this.isInitialized) {
-        this.next(this.currentValue);
+        this.next(this._value);
       }
     }
     update(updateFn) {
-      updateFn(this.currentValue);
+      updateFn(this._value);
       this.tap();
     }
     subscribe(callback, notifyImmediately = true) {
@@ -290,7 +306,7 @@
       const key = String(this.subscriberCount++);
       this.callbacks[key] = callback;
       if (notifyImmediately) {
-        this.runCallback(key, this.currentValue);
+        this.runCallback(key, this._value);
       }
       return () => {
         this.unsubscribe(key);
@@ -311,7 +327,7 @@
       return prop;
     }
     uniq() {
-      const prop = this.deriveProp(this.currentValue);
+      const prop = this.deriveProp(this._value);
       prop.onEnd(this.subscribe((value) => {
         if (prop.value !== value) {
           prop.next(value);
@@ -350,12 +366,6 @@
       }));
       return prop;
     }
-    getError() {
-      return this.errorPropInstance;
-    }
-    get error() {
-      return this.getError();
-    }
     get isEnded() {
       return this.ended;
     }
@@ -375,15 +385,9 @@
     }
     setCurrentValue(value) {
       this.initialized = true;
-      if (this.currentValue !== value) {
-        this.currentValue = value;
+      if (this._value !== value) {
+        this._value = value;
       }
-    }
-    get errorPropInstance() {
-      if (!this.errorProp) {
-        this.errorProp = Prop.pending();
-      }
-      return this.errorProp;
     }
     runCallback(key, value) {
       if (this.initialized && this.callbacks[key]) {
@@ -392,6 +396,11 @@
     }
     deriveProp(initialValue = void 0) {
       return new Prop(initialValue, this.initialized);
+    }
+    runCallbacks() {
+      for (let key in this.callbacks) {
+        this.runCallback(key, this._value, this._error);
+      }
     }
   };
 })();

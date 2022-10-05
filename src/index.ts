@@ -25,7 +25,7 @@ export const of = <T extends object>(property: Prop<T>): PropBindings<T> => {
           prop$ = Reflect.get(target, prop, receiver);
         }
         const propName = String(prop);
-        if (!prop$ || prop$.isEnded) {
+        if (!prop$ || prop$.ended) {
           prop$ = property.bind(get(propName as keyof T) as PropMapper<T, Definitely<T[keyof T]>>, set(propName as keyof T));
           propCache[propName] = prop$;
         }
@@ -56,7 +56,7 @@ export const into = <T extends object>(property: Prop<T>): DeepPropBindings<T> =
         if (propName === '$') {
           const cacheKey = '.' + path.join('.')
           let cached = propCache[cacheKey]
-          if (!cached || cached.isEnded) {
+          if (!cached || cached.ended) {
             const localPath = [...path]
             propCache[cacheKey] = property.bind(
               value => deepGet(value, localPath),
@@ -119,35 +119,18 @@ export const fromPromise = <T>(promise: Promise<T>): Prop<Maybe<T>> => {
 
 export const mergePromise = <T>(prop: Prop<T>, promise: Promise<T>): void => {
   promise.then((value: T) => {
-    prop.next(value as Definitely<T>);
-    prop.error.next(null);
+    prop.next(value);
   }).catch((error: any) => {
     if (error instanceof Error) {
-      prop.error.next(error);
+      prop.setError(error);
     } else {
-      prop.error.next(new Error(error));
+      prop.setError(new Error(error));
     }
   });
 }
 
-export const asyncUpdate = <T>(prop: Prop<T>, updateFn: (value: Maybe<T>) => Promise<T>): void => {
-  mergePromise(prop, updateFn(prop.value))
-}
-
-export const toPromise = <T>(prop: Prop<T>): Promise<T> => {
-  return new Promise((resolve, reject) => {
-    const unsub = prop.subscribe(x => {
-      resolve(x)
-      unsub()
-      errorUnsub()
-    }, false)
-    let errorSkipNext = prop.error.isInitialized
-    const errorUnsub = prop.error.subscribe(x => {
-      reject(x)
-      unsub()
-      errorUnsub()
-    }, false)
-  })
+export const asyncUpdate = <T>(prop: Prop<T>, updateFn: (value: PropValue<T>) => Promise<T>): void => {
+  mergePromise(prop, updateFn(prop.last))
 }
 
 const walkObject = (x: object, basePath: Array<string>, callback: (value: any, path: string[]) => void): void => {
@@ -183,14 +166,76 @@ const deepSet = (x: object, path: string[], value: unknown): void => {
   }
 }
 
-export const merge = <T>(...props: Prop<T>[]): Prop<Maybe<T>> => {
-  const prop = Prop.pending<T>();
-  for (let i = 0; i < props.length; i++) {
-    prop.onEnd(props[i].subscribe(x => {
-      prop.next(x);
-    }));
-  }
-  return prop;
+// export const merge = <T>(...props: Prop<T>[]): Prop<Maybe<T>> => {
+//   const prop = Prop.pending<T>();
+//   for (let i = 0; i < props.length; i++) {
+//     prop.onEnd(props[i].subscribe(x => {
+//       prop.next(x);
+//     }));
+//   }
+//   return prop;
+// }
+
+interface PropMapper<T, K> {
+  (propValue: PropValue<T>): Maybe<K>
+}
+
+export const map = <T, K>(prop: Prop<T>, mapperFn: PropMapper<T, K>): Prop<K> => {
+  // if parent prop is pending, the derived prop will stay pending too
+  // if parent prop has value, derived prop will be initialized when initial value is passed to subscribe method
+  const derived = Prop.pending<K>()
+  derived.onEnd(prop.subscribe(propValue => {
+    let newValue
+    try {
+      newValue = mapperFn(propValue)
+    } catch (error) {
+      newValue = new PropValue(propValue.value, error);
+    }
+    // undefined is a special value that will skip prop update if error is not present
+    if (newValue!== undefined) {
+      derived.next(newValue)
+    }
+  }));
+  return derived;
+}
+
+export const filter = <T>(prop: Prop<T>, filterFn: (value: PropValue<T>) => boolean): Prop<T> => {
+  return map(prop, propValue => {
+    if (!filterFn(propValue)) {
+      return undefined;
+    }
+    return propValue.unwrap();
+  })
+}
+
+export const uniq = <T>(prop: Prop<T>): Prop<T> => {
+  const derived = filter(prop, propValue => {
+    return propValue.value === derived.last.value
+  })
+  return derived;
+}
+
+export const mapUniq = <T, K>(prop: Prop<T>, mapper: PropMapper<T, K>): Prop<K> => {
+  const derived = map(prop, propValue => {
+    const newValue = mapper(propValue);
+    if (newValue === derived.last.value) {
+      return undefined;
+    }
+    return newValue;
+  })
+  return derived;
+}
+
+interface PropUpdater<T, K> {
+  (propValue: PropValue<T>, chunkValue: PropValue<K>): T
+}
+
+export const bind = <T extends Object, K>(prop: Prop<T>, mapper: PropMapper<T, K>, updater: PropUpdater<T, K>): Prop<K> => {
+  const derived = mapUniq(prop, mapper);
+  prop.onEnd(derived.subscribe(chunkValue => {
+    prop.update(value => updater(value, chunkValue));
+  }));
+  return derived;
 }
 
 type PropSubject<T> = T extends Prop<infer K> ? K : never
@@ -201,47 +246,33 @@ type ComposedProp<T> = T extends Prop<any>[] ?
   Prop<ComposedPropValues<T>> 
   : never
 
-export const compose = <T extends Array<Prop<any>>>(...props: T): ComposedProp<T> => {
-  const res = [] as PropSubject<T[keyof T]>;
+const getAggregateError = (props: Prop<any>[]): Nullable<AggregateError> => {
+  const errors = props.map(x => x.last.error)
+  if (!errors.length) {
+    return null
+  }
+  return AggregateError(errors)
+}
+
+export const tuple = <T extends Array<Prop<any>>>(...props: T): ComposedProp<T> => {
+  const values = [] as PropSubject<T[keyof T]>[];
   for (let i = 0; i < props.length; i++) {
     if (props[i] instanceof Prop) {
-      res.push((props[i]).value);
+      values.push(props[i].last.value);
     } else {
-      res.push((props[i]));
+      values.push(props[i] as any);
     }
   }
-  const allPending = !props.find(x => x.isInitialized)
-  let prop
-  if (allPending) {
-    prop = Prop.pending() as ComposedProp<T>
-  } else {
-    prop = new Prop(res) as unknown as ComposedProp<T>;
-  }
+  const prop = new Prop(values, getAggregateError(props)) as ComposedProp<T>
   for (let i = 0; i < props.length; i++) {
     if (props[i] instanceof Prop) {
       props[i].subscribe(x => {
-        res[i] = x;
-        prop.next(res as any[]);
+        values[i] = x.value;
+        prop.next(values, getAggregateError(props));
       });
     }
   }
   return prop;
-}
-
-export const subscribe = <T extends Prop<any>[]>(props: T, callbackFn: (...values: ComposedPropValues<T>) => void): Function => {
-  return compose(...props).subscribe((values: ComposedPropValues<T>) => {
-    callbackFn(...values);
-  })
-}
-
-export const map = <T extends Prop<any>[], K>(props: T, mapperFn: (...values: ComposedPropValues<T>) => Definitely<K>): Prop<K> => {
-  const prop = compose(...props);
-  return prop.map<K>(values => mapperFn(...values as ComposedPropValues<T>));
-}
-
-export const filter = <T extends Prop<any>[]>(props: T, filterFn: (...values: ComposedPropValues<T>) => boolean): ComposedProp<T> => {
-  const prop = compose(...props);
-  return prop.filter(values => filterFn(...values as ComposedPropValues<T>)) as ComposedProp<T>;
 }
 
 type ObjectWithProps = { [key: string | symbol]: Prop<any> | ObjectWithProps }
@@ -252,139 +283,132 @@ type ComposedPropObject<T extends object> = {
       : never 
 }
 
-export const composeObject = <T extends ObjectWithProps>(template: T): Prop<ComposedPropObject<T>> => {
-  const res = {} as ComposedPropObject<T>, props: Array<[string[], Prop<any>]> = new Array();
+export const dict = <T extends ObjectWithProps>(template: T): Prop<ComposedPropObject<T>> => {
+  const res = {} as ComposedPropObject<T>,
+    props: Array<Prop<any>> = new Array(),
+    paths: string[][] = []
   walkObject(template, [], (x, path: string[]) => {
     if (x instanceof Prop) {
-      deepSet(res, path, x.value);
-      props.push([path, x]);
+      deepSet(res, path, x.last.value);
+      props.push(x);
+      paths.push(path)
     } else {
       deepSet(res, path, x)
     }
   });
-  const allPending = !props.find(x => x[1].isInitialized)
-  let prop
-  if (allPending) {
-    prop = Prop.pending<ComposedPropObject<T>>()
-  } else {
-    prop = new Prop(res);
-  }
+  const prop = new Prop(res, getAggregateError(props))
   for (let i = 0; i < props.length; i++) {
-    props[i][1].subscribe((newValue) => {
-      deepSet(res, props[i][0], newValue);
-      prop.next(res);
+    props[i].subscribe((newValue) => {
+      deepSet(res, paths[i], newValue.value);
+      prop.next(res, getAggregateError(props));
     });
   }
   return prop;
 }
 
 export const not = (prop: Prop<any>): Prop<boolean> => {
-  return prop.map(x => !x);
+  return map(prop, x => !x.unwrap());
 }
 
 export const every = (...props: Prop<any>[]): Prop<boolean> => {
-  return compose(...props).map((x: any[]) => x.every(x => x));
+  return map(tuple(...props), (x: PropValue<any[]>) => x.unwrap().every(x => x));
 }
 
 export const some = (...props: Prop<any>[]): Prop<boolean> => {
-  return compose(...props).map((x: any[]) => x.some(x => x));
+  return map(tuple(...props), (x: PropValue<any[]>) => x.unwrap().some(x => x));
 }
 
-type GetterFn<T extends object, K extends keyof T> = { (value: T): T[K] }
-type SetterFn<T extends object, K extends keyof T> = { (value: T, chunkValue: T[K]): void }
-export const get = <T extends object, K extends keyof T>(key: K): GetterFn<T, K> => value => value[key]
+type GetterFn<T extends object, K extends keyof T> = { (value: PropValue<T>): T[K] }
+type SetterFn<T extends object, K extends keyof T> = { (value: PropValue<T>, chunkValue: T[K]): void }
+export const get = <T extends object, K extends keyof T>(key: K): GetterFn<T, K> => value => value.unwrap()[key]
 export const set = <T extends object, K extends keyof T>(key: K): SetterFn<T, K> => (value, chunkValue) => {
-  if (value[key] !== chunkValue) {
-    value[key] = chunkValue
-  }
-}
-
-export const liftError = <T>(prop: Prop<T>): [Prop<T>, Prop<Maybe<Nullable<Error>>>] => {
-  return [prop, prop.error];
+  value.unwrap()[key] = chunkValue
 }
 
 interface PropCallback<T> {
-  (arg: Definitely<T>): void
-}
-
-interface PropMapper<T, K> {
-  (arg: Definitely<T>): Definitely<K>
-}
-
-interface PropUpdater<T, K> {
-  (propValue: T, chunkValue: K): void
+  (propValue: PropValue<T>): void
 }
 
 type Nullable<T> = T | null
 type Maybe<T> = T | undefined
 type Definitely<T> = T extends Maybe<any> ? Exclude<T, undefined> : T
 
-export class Prop<T> {
-  protected callbacks: { [key: number]: PropCallback<T> } = {};
-  protected endCallbacks: Function[] = [];
-  protected ended = false;
-  protected currentValue: T;
-  protected initialized: boolean = false;
-  protected errorProp: Nullable<Prop<Maybe<Nullable<Error>>>> = null;
-  protected subscriberCount = 0;
+export class PendingPropError extends Error {}
+export class CannotMutateValue extends Error {}
 
-  static pending<T>(): Prop<Maybe<T>> {
-    return new Prop<Maybe<T>>(undefined, false);
-  }
+class PropValue<T> {
+  #value: T
+  #error: Nullable<Error>
 
-  constructor(value: T, initialize = true) {
-    if (initialize && value !== undefined) {
-      this.setCurrentValue(value);
+  constructor(value: Maybe<T>, error: Nullable<Error>) {
+    if (value !== undefined) {
+      this.#value = value;
     }
+    this.#error = error;
   }
 
-  set value(value: T) {
-    this.next(value as Definitely<T>);
-  }
-
-  getValue(): T {
-    return this.currentValue;
+  unwrap(errorHandler: (error: Error) => void = error => { throw error }): T {
+    if (this.error) {
+      errorHandler(this.error);
+    }
+    return this.value;
   }
 
   get value(): T {
-    return this.getValue();
+    return this.#value;
   }
 
-  get isInitialized(): boolean {
-    return this.initialized;
+  get error(): Nullable<Error> {
+    return this.#error;
+  }
+}
+
+export class Prop<T> {
+  #callbacks: { [key: number]: PropCallback<T> } = {};
+  #endCallbacks: Function[] = [];
+  #ended = false;
+  #subscriberCount = 0;
+  #last: PropValue<T>
+
+  static pending<T>(): Prop<T> {
+    return new Prop<T>(undefined, new PendingPropError());
   }
 
-  next(value: Definitely<T>): void {
-    this.setCurrentValue(value);
-    if (this.errorProp !== null && this.errorProp!.isInitialized) {
-      this.error.set(null);
-    }
-    for (let key in this.callbacks) {
-      this.runCallback(key, value);
-    }
+  constructor(value: Maybe<T>, error: Nullable<Error> = null) {
+    this.#last = new PropValue(value, error)
+  }
+
+  get last(): PropValue<T> {
+    return this.#last;
+  }
+
+  next(value: T, error: Nullable<Error> = null): void {
+    this.#last = new PropValue(value, error)
+    this.#runCallbacks()
   }
 
   set = this.next
 
-  tap() {
-    if (this.isInitialized) {
-      this.next(this.currentValue as Definitely<T>);
-    }
+  setError(error: Error): void {
+    this.next(this.last.value, error);
   }
 
-  update(updateFn: (value: T) => void): void {
-    updateFn(this.currentValue);
-    this.tap();
+  update(updateFn: (propValue: PropValue<T>) => T): void {
+    try {
+      this.next(updateFn(this.last))
+    } catch (error) {
+      this.setError(error)
+    }
   }
 
   subscribe(callback: PropCallback<T>, notifyImmediately = true): Function {
-    if (this.ended) {
+    if (this.#ended) {
       return () => {}
     }
-    const key = String(this.subscriberCount++);
-    this.callbacks[key] = callback;
+    const key = String(this.#subscriberCount++);
+    this.#callbacks[key] = callback;
     if (notifyImmediately) {
-      this.runCallback(key, this.currentValue);
+      this.#runCallback(key, this.last);
     }
     return () => {
       this.unsubscribe(key);
@@ -394,115 +418,38 @@ export class Prop<T> {
   watch = this.subscribe
 
   unsubscribe(key: string): void {
-    if (this.callbacks[key]) {
-      delete this.callbacks[key];      
+    if (this.#callbacks[key]) {
+      delete this.#callbacks[key];      
     }
   }
 
-  filter(filterFn: (arg: T) => boolean): Prop<T> {
-    const prop: Prop<T> = this.deriveProp();
-    prop.onEnd(this.subscribe(value => {
-      if (filterFn(value)) {
-        prop.next(value);
-      }
-    }));
-    return prop;
-  }
-
-  uniq(): Prop<T> {
-    const prop: Prop<T> = this.deriveProp(this.currentValue)
-    prop.onEnd(this.subscribe(value => {
-      if (prop.value !== value) {
-        prop.next(value);
-      }
-    }));
-    return prop;
-  }
-
-  map<K>(mapper: PropMapper<T, K>): Prop<K> {
-    const prop = this.deriveProp<K>();
-    prop.onEnd(this.subscribe(value => prop.next(mapper(value))));
-    return prop;
-  }
-
-  mapUniq<K>(mapper: PropMapper<T, K>): Prop<K> {
-    const prop = this.deriveProp<K>();
-    prop.onEnd(this.subscribe(value => {
-      const newValue = mapper(value);
-      if (prop.value !== newValue) {
-        prop.next(newValue);
-      }
-    }));
-    return prop;
-  }
-
-  merge(...props: Prop<T>[]): void {
-    for (let i = 0; i < props.length; i++) {
-      this.onEnd(props[i].subscribe(x => {
-        this.next(x);
-      }));
-    }
-  }
-
-  bind<K>(mapper: PropMapper<T, K>, updater: PropUpdater<T, K>): Prop<K> {
-    const prop = this.mapUniq(mapper);
-    this.onEnd(prop.subscribe(x => {
-      this.update(value => {
-        updater(value, x);
-      });
-    }));
-    return prop;
-  }
-
-  getError(): Prop<Maybe<Nullable<Error>>> {
-    return this.errorPropInstance;
-  }
-
-  get error(): Prop<Maybe<Nullable<Error>>> {
-    return this.getError();
-  }
-
-  get isEnded() {
-    return this.ended;
+  get ended() {
+    return this.#ended;
   }
 
   end() {
-    this.ended = true;
-    const keys = Object.keys(this.callbacks);
+    this.#ended = true;
+    const keys = Object.keys(this.#callbacks);
     for (let i = 0; i < keys.length; i++) {
       this.unsubscribe(keys[i]);
     }
-    for (let i = 0; i < this.endCallbacks.length; i++) {
-      this.endCallbacks[i]();
+    for (let i = 0; i < this.#endCallbacks.length; i++) {
+      this.#endCallbacks[i]();
     }
-    this.endCallbacks.length = 0;
+    this.#endCallbacks.length = 0;
   }
 
   onEnd(callback: Function) {
-    this.endCallbacks.push(callback);
+    this.#endCallbacks.push(callback);
   }
 
-  protected setCurrentValue(value: T): void {
-    this.initialized = true;
-    if (this.currentValue !== value) {
-      this.currentValue = value;
-    }
-  }
-  
-  protected get errorPropInstance(): Prop<Maybe<Nullable<Error>>> {
-    if (!this.errorProp) {
-      this.errorProp = Prop.pending<Maybe<Nullable<Error>>>();
-    }
-    return this.errorProp;
-  }
-
-  protected runCallback(key: string, value: T): void {
-    if (this.initialized && this.callbacks[key]) {
-      this.callbacks[key](value);
+  #runCallbacks(): void {
+    for (let key in this.#callbacks) {
+      this.#runCallback(key, this.last)
     }
   }
 
-  protected deriveProp<K>(initialValue: K = undefined as K) {
-    return new Prop<K>(initialValue, this.initialized);
+  #runCallback(key: string, propValue: PropValue<T>): void {
+    this.#callbacks[key]?.(propValue)
   }
 }

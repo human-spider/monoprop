@@ -24,10 +24,14 @@ export declare const asyncUpdate: <T>(prop: Prop<T>, updateFn: (value: Maybe<T>)
 export declare const toPromise: <T>(prop: Prop<T>) => Promise<T>;
 export declare const merge: <T>(...props: Prop<T>[]) => Prop<Maybe<T>>;
 declare type PropSubject<T> = T extends Prop<infer K> ? K : never;
-declare type ComposedProp<T> = T extends Prop<any>[] ? Prop<{
+declare type ComposedPropValues<T> = T extends Prop<any>[] ? {
     [K in keyof T]: PropSubject<T[K]>;
-}> : never;
+} : never;
+declare type ComposedProp<T> = T extends Prop<any>[] ? Prop<ComposedPropValues<T>> : never;
 export declare const compose: <T extends Prop<any>[]>(...props: T) => ComposedProp<T>;
+export declare const subscribe: <T extends Prop<any>[]>(props: T, callbackFn: (...values: ComposedPropValues<T>) => void) => Function;
+export declare const map: <T extends Prop<any>[], K>(props: T, mapperFn: (...values: ComposedPropValues<T>) => Definitely<K>) => Prop<K>;
+export declare const filter: <T extends Prop<any>[]>(props: T, filterFn: (...values: ComposedPropValues<T>) => boolean) => ComposedProp<T>;
 declare type ObjectWithProps = {
     [key: string | symbol]: Prop<any> | ObjectWithProps;
 };
@@ -46,6 +50,7 @@ declare type SetterFn<T extends object, K extends keyof T> = {
 };
 export declare const get: <T extends object, K extends keyof T>(key: K) => GetterFn<T, K>;
 export declare const set: <T extends object, K extends keyof T>(key: K) => SetterFn<T, K>;
+export declare const liftError: <T>(prop: Prop<T>) => [Prop<T>, Prop<Maybe<Nullable<Error>>>];
 interface PropCallback<T> {
     (arg: Definitely<T>): void;
 }
@@ -64,18 +69,20 @@ export declare class Prop<T> {
     };
     protected endCallbacks: Function[];
     protected ended: boolean;
-    protected currentValue: T;
     protected initialized: boolean;
-    protected errorProp: Nullable<Prop<Maybe<Nullable<Error>>>>;
     protected subscriberCount: number;
+    protected _error: Nullable<Error>;
+    protected _value: T;
     static pending<T>(): Prop<Maybe<T>>;
     constructor(value: T, initialize?: boolean);
     set value(value: T);
     getValue(): T;
     get value(): T;
+    getError(): Nullable<Error>;
     get isInitialized(): boolean;
-    next(value: Definitely<T>): void;
-    set: (value: Definitely<T>) => void;
+    next(value: T): void;
+    set: (value: T) => void;
+    setError(error: Error): void;
     tap(): void;
     update(updateFn: (value: T) => void): void;
     subscribe(callback: PropCallback<T>, notifyImmediately?: boolean): Function;
@@ -87,14 +94,12 @@ export declare class Prop<T> {
     mapUniq<K>(mapper: PropMapper<T, K>): Prop<K>;
     merge(...props: Prop<T>[]): void;
     bind<K>(mapper: PropMapper<T, K>, updater: PropUpdater<T, K>): Prop<K>;
-    getError(): Prop<Maybe<Nullable<Error>>>;
-    get error(): Prop<Maybe<Nullable<Error>>>;
     get isEnded(): boolean;
     end(): void;
     onEnd(callback: Function): void;
     protected setCurrentValue(value: T): void;
-    protected get errorPropInstance(): Prop<Maybe<Nullable<Error>>>;
     protected runCallback(key: string, value: T): void;
     protected deriveProp<K>(initialValue?: K): Prop<K>;
+    protected runCallbacks(): void;
 }
 export {};

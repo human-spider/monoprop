@@ -24,10 +24,13 @@ __export(src_exports, {
   compose: () => compose,
   composeObject: () => composeObject,
   every: () => every,
+  filter: () => filter,
   fromEvent: () => fromEvent,
   fromPromise: () => fromPromise,
   get: () => get,
   into: () => into,
+  liftError: () => liftError,
+  map: () => map,
   merge: () => merge,
   mergeEvent: () => mergeEvent,
   mergePromise: () => mergePromise,
@@ -35,6 +38,7 @@ __export(src_exports, {
   of: () => of,
   set: () => set,
   some: () => some,
+  subscribe: () => subscribe,
   toPromise: () => toPromise
 });
 module.exports = __toCommonJS(src_exports);
@@ -225,6 +229,19 @@ var compose = (...props) => {
   }
   return prop;
 };
+var subscribe = (props, callbackFn) => {
+  return compose(...props).subscribe((values) => {
+    callbackFn(...values);
+  });
+};
+var map = (props, mapperFn) => {
+  const prop = compose(...props);
+  return prop.map((values) => mapperFn(...values));
+};
+var filter = (props, filterFn) => {
+  const prop = compose(...props);
+  return prop.filter((values) => filterFn(...values));
+};
 var composeObject = (template) => {
   const res = {}, props = new Array();
   walkObject(template, [], (x, path) => {
@@ -265,14 +282,17 @@ var set = (key) => (value, chunkValue) => {
     value[key] = chunkValue;
   }
 };
+var liftError = (prop) => {
+  return [prop, prop.error];
+};
 var Prop = class {
   constructor(value, initialize = true) {
     this.callbacks = {};
     this.endCallbacks = [];
     this.ended = false;
     this.initialized = false;
-    this.errorProp = null;
     this.subscriberCount = 0;
+    this._error = null;
     this.set = this.next;
     this.watch = this.subscribe;
     if (initialize && value !== void 0) {
@@ -286,30 +306,30 @@ var Prop = class {
     this.next(value);
   }
   getValue() {
-    return this.currentValue;
+    return this._value;
   }
   get value() {
     return this.getValue();
+  }
+  getError() {
+    return this._error;
   }
   get isInitialized() {
     return this.initialized;
   }
   next(value) {
     this.setCurrentValue(value);
-    if (this.errorProp !== null && this.errorProp.isInitialized) {
-      this.error.set(null);
-    }
-    for (let key in this.callbacks) {
-      this.runCallback(key, value);
-    }
+    this._error = null;
+  }
+  setError(error) {
   }
   tap() {
     if (this.isInitialized) {
-      this.next(this.currentValue);
+      this.next(this._value);
     }
   }
   update(updateFn) {
-    updateFn(this.currentValue);
+    updateFn(this._value);
     this.tap();
   }
   subscribe(callback, notifyImmediately = true) {
@@ -320,7 +340,7 @@ var Prop = class {
     const key = String(this.subscriberCount++);
     this.callbacks[key] = callback;
     if (notifyImmediately) {
-      this.runCallback(key, this.currentValue);
+      this.runCallback(key, this._value);
     }
     return () => {
       this.unsubscribe(key);
@@ -341,7 +361,7 @@ var Prop = class {
     return prop;
   }
   uniq() {
-    const prop = this.deriveProp(this.currentValue);
+    const prop = this.deriveProp(this._value);
     prop.onEnd(this.subscribe((value) => {
       if (prop.value !== value) {
         prop.next(value);
@@ -380,12 +400,6 @@ var Prop = class {
     }));
     return prop;
   }
-  getError() {
-    return this.errorPropInstance;
-  }
-  get error() {
-    return this.getError();
-  }
   get isEnded() {
     return this.ended;
   }
@@ -405,15 +419,9 @@ var Prop = class {
   }
   setCurrentValue(value) {
     this.initialized = true;
-    if (this.currentValue !== value) {
-      this.currentValue = value;
+    if (this._value !== value) {
+      this._value = value;
     }
-  }
-  get errorPropInstance() {
-    if (!this.errorProp) {
-      this.errorProp = Prop.pending();
-    }
-    return this.errorProp;
   }
   runCallback(key, value) {
     if (this.initialized && this.callbacks[key]) {
@@ -422,5 +430,10 @@ var Prop = class {
   }
   deriveProp(initialValue = void 0) {
     return new Prop(initialValue, this.initialized);
+  }
+  runCallbacks() {
+    for (let key in this.callbacks) {
+      this.runCallback(key, this._value, this._error);
+    }
   }
 };

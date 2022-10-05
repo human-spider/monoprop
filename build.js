@@ -4,6 +4,7 @@ const { dependencies } = require('./package.json')
 const config = {
     allowOverwrite: true,
     bundle: true,
+    target: 'es2021',
     external: Object.keys(dependencies),
 }
 
