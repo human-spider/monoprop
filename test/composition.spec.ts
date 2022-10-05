@@ -1,4 +1,4 @@
-import { Prop, tuple, dict, some, every, not, PropValue, map } from './../src/index';
+import { Prop, tuple, dict, some, every, not, PropValue, map, PendingPropError } from './../src/index';
 import test from 'ava'
 
 test('tuple', t => {
@@ -15,16 +15,37 @@ test('tuple', t => {
 })
 
 test('tuple ignores static values', t => {
+  const num = new Prop(0)
+  const str = new Prop('')
+  const composed = tuple(num, str, 'snake' as any)
+  let notified: PropValue<[number, string, any]>
+  composed.subscribe(x => { notified = x })
+  t.deepEqual(notified!.unwrap(), [0, '', 'snake'])
+  num.set(1)
+  t.deepEqual(notified!.unwrap(), [1, '', 'snake'])
+  str.set('mushroom')
+  t.deepEqual(notified!.unwrap(), [1, 'mushroom', 'snake'])
+})
+
+test('tuple has PendingPropError when all props are pending', t => {
   const num = Prop.pending<number>()
   const str = Prop.pending<string>()
   const composed = tuple(num, str, 'snake' as any)
   let notified: PropValue<[number, string, any]>
   composed.subscribe(x => { notified = x })
-  t.deepEqual(notified!.unwrap(), [], 'composed prop all pending with static value was initialized')
-  num.set(1)
-  t.deepEqual(notified!.unwrap(), [1, undefined, 'snake'])
-  str.set('mushroom')
-  t.deepEqual(notified!.unwrap(), [1, 'mushroom', 'snake'])
+  t.true(notified!.error instanceof PendingPropError)
+})
+
+test('tuple has AggregateError when some props have errors', t => {
+  const num = new Prop(0)
+  const str = new Prop('')
+  const composed = tuple(num, str)
+  const error = new Error()
+  str.setError(error)
+  let notified: PropValue<[number, string]>
+  composed.subscribe(x => { notified = x })
+  t.true(notified!.error instanceof AggregateError)
+  t.deepEqual(notified!.error!.errors, [error])
 })
 
 test('dict', t => {
@@ -51,6 +72,27 @@ test('dict ignores static values', t => {
   t.deepEqual(notified!.unwrap(), { num: 1, deep: { str: 'badger', static: 'snake' } })
   str.set('mushroom')
   t.deepEqual(notified!.unwrap(), { num: 1, deep: { str: 'mushroom', static: 'snake' } })
+})
+
+test('dict has PendingPropError when all props are pending', t => {
+  const num = Prop.pending<number>()
+  const str = Prop.pending<string>()
+  let notified: PropValue<{num: number, deep: {str: string}}>
+  const composed = dict({num, deep: {str}})
+  composed.subscribe(x => { notified = x })
+  t.true(notified!.error instanceof PendingPropError)
+})
+
+test('dict has AggregateError when some props have errors', t => {
+  const num = new Prop(0)
+  const str = new Prop('')
+  const error = new Error()
+  str.setError(error)
+  let notified: PropValue<{num: number, deep: {str: string}}>
+  const composed = dict({num, deep: {str}})
+  composed.subscribe(x => { notified = x })
+  t.true(notified!.error instanceof AggregateError)
+  t.deepEqual(notified!.error!.errors, [error])
 })
 
 test('logical operators', t => {

@@ -9,6 +9,7 @@ test('Prop returns last value as PropValue', t => {
 })
 
 test('PropValue has unwrap method', t => {
+  t.plan(3)
   const prop = new Prop(0)
   t.is(prop.last.unwrap(), 0)
   const error = new Error()
@@ -17,7 +18,7 @@ test('PropValue has unwrap method', t => {
   try {
     prop.last.unwrap()
   } catch (e) {
-    t.is(e, error, 'error was not raised')
+    t.is(e, error)
   }
   prop.last.unwrap(e => { lastError = e })
   t.is(lastError!, error, 'onError callback was not called')
@@ -86,7 +87,6 @@ test('skipPending method suppresses PendingPropError in subscribe callback', t =
     notified = x.value
     error = x.error
   }))
-  console.log(notified)
   t.is(notified, -1)
   prop.set(1)
   t.is(notified, 1, 'subscriber was not notified of updated value')

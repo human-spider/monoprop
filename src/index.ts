@@ -246,9 +246,17 @@ type ComposedProp<T> = T extends Prop<any>[] ?
   : never
 
 const getAggregateError = (props: Prop<any>[]): Nullable<AggregateError> => {
-  const errors = props.map(x => x.last.error)
+  let errors = [] as Error[]
+  for(let i = 0; i < props.length; i++) {
+    if (props[i] instanceof Prop && props[i].last.error) {
+      errors.push(props[i].last.error!)
+    }
+  }
   if (!errors.length) {
     return null
+  }
+  if (!errors.find(e => !(e instanceof PendingPropError))) {
+    return new PendingPropError();
   }
   return AggregateError(errors)
 }
@@ -265,10 +273,10 @@ export const tuple = <T extends Array<Prop<any>>>(...props: T): ComposedProp<T> 
   const prop = new Prop(values, getAggregateError(props)) as ComposedProp<T>
   for (let i = 0; i < props.length; i++) {
     if (props[i] instanceof Prop) {
-      props[i].subscribe(x => {
+      props[i].subscribe(skipPending(x => {
         values[i] = x.value;
         prop.next(values, getAggregateError(props));
-      });
+      }));
     }
   }
   return prop;
