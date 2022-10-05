@@ -1,123 +1,72 @@
-import { Prop, compose, composeObject, some, every, not } from './../src/index';
+import { Prop, tuple, dict, some, every, not, PropValue, map } from './../src/index';
 import test from 'ava'
 
-test('compose', t => {
+test('tuple', t => {
   const num = new Prop(0)
   const str = new Prop('badger')
-  const composed = compose(num, str)
-  let notified = new Array()
+  const composed = tuple(num, str)
+  let notified: PropValue<[number, string]>
   composed.subscribe(x => { notified = x })
-  t.deepEqual(notified, [0, 'badger'])
-  num.value = 1
-  t.deepEqual(notified, [1, 'badger'])
-  str.value = 'mushroom'
-  t.deepEqual(notified, [1, 'mushroom'])
+  t.deepEqual(notified!.unwrap(), [0, 'badger'])
+  num.set(1)
+  t.deepEqual(notified!.unwrap(), [1, 'badger'])
+  str.set('mushroom')
+  t.deepEqual(notified!.unwrap(), [1, 'mushroom'])
 })
 
-test('compose partial pending', t => {
-  const num = new Prop(0)
-  const str = Prop.pending<string>()
-  const composed = compose(num, str)
-  let notified = new Array()
-  composed.subscribe(x => { notified = x })
-  t.deepEqual(notified, [0, undefined], 'composed prop was not initialized when some component props are pending')
-  num.value = 1
-  t.deepEqual(notified, [1, undefined])
-  str.value = 'mushroom'
-  t.deepEqual(notified, [1, 'mushroom'])
-})
-
-test('compose all pending', t => {
+test('tuple ignores static values', t => {
   const num = Prop.pending<number>()
   const str = Prop.pending<string>()
-  const composed = compose(num, str)
-  let notified = new Array()
+  const composed = tuple(num, str, 'snake' as any)
+  let notified: PropValue<[number, string, any]>
   composed.subscribe(x => { notified = x })
-  t.deepEqual(notified, [], 'composed prop was initialized when all component props are pending')
-  num.value = 1
-  t.deepEqual(notified, [1, undefined])
-  str.value = 'mushroom'
-  t.deepEqual(notified, [1, 'mushroom'])
+  t.deepEqual(notified!.unwrap(), [], 'composed prop all pending with static value was initialized')
+  num.set(1)
+  t.deepEqual(notified!.unwrap(), [1, undefined, 'snake'])
+  str.set('mushroom')
+  t.deepEqual(notified!.unwrap(), [1, 'mushroom', 'snake'])
 })
 
-test('compose ignores static values', t => {
-  const num = Prop.pending<number>()
-  const str = Prop.pending<string>()
-  const composed = compose(num, str, 'snake' as any)
-  let notified = new Array()
-  composed.subscribe(x => { notified = x })
-  t.deepEqual(notified, [], 'composed prop all pending with static value was initialized')
-  num.value = 1
-  t.deepEqual(notified, [1, undefined, 'snake'])
-  str.value = 'mushroom'
-  t.deepEqual(notified, [1, 'mushroom', 'snake'])
-})
-
-test('composeObject', t => {
+test('dict', t => {
   const num = new Prop(0)
   const str = new Prop('badger')
-  const composed = composeObject({num, deep: {str}})
-  let notified = new Object()
+  const composed = dict({num, deep: {str}})
+  let notified: PropValue<{num: number, deep: {str: string}}>
   composed.subscribe(x => { notified = x })
-  t.deepEqual(notified, { num: 0, deep: { str: 'badger' } })
-  num.value = 1
-  t.deepEqual(notified, { num: 1, deep: { str: 'badger' } })
-  str.value = 'mushroom'
-  t.deepEqual(notified, { num: 1, deep: { str: 'mushroom' } })
+  t.deepEqual(notified!.unwrap(), { num: 0, deep: { str: 'badger' } })
+  num.set(1)
+  t.deepEqual(notified!.unwrap(), { num: 1, deep: { str: 'badger' } })
+  str.set('mushroom')
+  t.deepEqual(notified!.unwrap(), { num: 1, deep: { str: 'mushroom' } })
 })
 
-test('composeObject partial pending', t => {
+test('dict ignores static values', t => {
   const num = new Prop(0)
-  const str = Prop.pending<string>()
-  const composed = composeObject({num, deep: {str}})
-  let notified = new Object()
+  const str = new Prop('badger')
+  const composed = dict({num, deep: {str, static: 'snake' as any}})
+  let notified: PropValue<{num: number, deep: {str: string, static: any}}>
   composed.subscribe(x => { notified = x })
-  t.deepEqual(notified, { num: 0, deep: { str: undefined } }, 'composed object prop was not initialized when some component props are pending')
-  num.value = 1
-  t.deepEqual(notified, { num: 1, deep: { str: undefined } })
-  str.value = 'mushroom'
-  t.deepEqual(notified, { num: 1, deep: { str: 'mushroom' } })
-})
-
-test('composeObject all pending', t => {
-  const num = Prop.pending<number>()
-  const str = Prop.pending<string>()
-  const composed = composeObject({num, deep: {str}})
-  let notified = new Object()
-  composed.subscribe(x => { notified = x })
-  t.deepEqual(notified, {}, 'composed object prop was initialized when all component props are pending')
-  num.value = 1
-  t.deepEqual(notified, { num: 1, deep: { str: undefined } })
-  str.value = 'mushroom'
-  t.deepEqual(notified, { num: 1, deep: { str: 'mushroom' } })
-})
-
-test('composeObject ignores static values', t => {
-  const num = Prop.pending<number>()
-  const str = Prop.pending<string>()
-  const composed = composeObject({num, deep: {str, static: 'snake'}} as any)
-  let notified = new Object()
-  composed.subscribe(x => { notified = x })
-  t.deepEqual(notified, {}, 'composed object prop all pending with static value was initialized')
-  num.value = 1
-  t.deepEqual(notified, { num: 1, deep: { str: undefined, static: 'snake' } })
-  str.value = 'mushroom'
-  t.deepEqual(notified, { num: 1, deep: { str: 'mushroom', static: 'snake' } })
+  t.deepEqual(notified!.unwrap(), { num: 0, deep: { str: 'badger', static: 'snake' } })
+  num.set(1)
+  t.deepEqual(notified!.unwrap(), { num: 1, deep: { str: 'badger', static: 'snake' } })
+  str.set('mushroom')
+  t.deepEqual(notified!.unwrap(), { num: 1, deep: { str: 'mushroom', static: 'snake' } })
 })
 
 test('logical operators', t => {
   const pos = new Prop(1)
   const neg = new Prop(-1)
   const bool = new Prop(false)
-  const isPositive = x => x > 0
-  t.true(some(pos, bool).value)
-  t.true(some(pos.map(isPositive), bool).value)
-  t.true(some(pos.map(isPositive), neg.map(isPositive)).value)
-  t.false(every(pos, bool).value)
-  t.false(every(pos.map(isPositive), bool).value)
-  t.false(every(pos.map(isPositive), neg.map(isPositive)).value)
-  t.true(every(pos.map(isFinite), neg.map(isFinite)).value)
-  t.true(not(bool).value)
-  t.true(every(pos.map(isFinite), neg.map(isFinite), not(bool)).value)
-  t.false(not(pos).value)
+  const isPositive = (x: PropValue<number>) => x.value > 0
+  const isFiniteValue = (x: PropValue<number>) => isFinite(x.value)
+  t.true(some(pos, bool).last.value)
+  t.true(some(map(pos, isPositive), bool).last.value)
+  t.true(some(map(pos, isPositive), map(neg, isPositive)).last.value)
+  t.false(every(pos, bool).last.value)
+  t.false(every(map(pos, isPositive), bool).last.value)
+  t.false(every(map(pos, isPositive), map(neg, isPositive)).last.value)
+  t.true(every(map(pos, isFiniteValue), map(neg, isFiniteValue)).last.value)
+  t.true(not(bool).last.value)
+  t.true(every(map(pos, isFiniteValue), map(neg, isFiniteValue), not(bool)).last.value)
+  t.false(not(pos).last.value)
 })

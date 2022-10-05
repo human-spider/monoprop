@@ -185,15 +185,14 @@ export const map = <T, K>(prop: Prop<T>, mapperFn: PropMapper<T, K>): Prop<K> =>
   // if parent prop has value, derived prop will be initialized when initial value is passed to subscribe method
   const derived = Prop.pending<K>()
   derived.onEnd(prop.subscribe(propValue => {
-    let newValue
     try {
-      newValue = mapperFn(propValue)
+      const newValue = mapperFn(propValue)
+      // undefined is a special value that will skip prop update if error is not present
+      if (newValue !== undefined) {
+        derived.next(newValue)
+      }
     } catch (error) {
-      newValue = new PropValue(propValue.value, error);
-    }
-    // undefined is a special value that will skip prop update if error is not present
-    if (newValue!== undefined) {
-      derived.next(newValue)
+      derived.setError(error)
     }
   }));
   return derived;
@@ -210,7 +209,7 @@ export const filter = <T>(prop: Prop<T>, filterFn: (value: PropValue<T>) => bool
 
 export const uniq = <T>(prop: Prop<T>): Prop<T> => {
   const derived = filter(prop, propValue => {
-    return propValue.value === derived.last.value
+    return propValue.value !== derived.last.value
   })
   return derived;
 }
@@ -325,6 +324,14 @@ export const set = <T extends object, K extends keyof T>(key: K): SetterFn<T, K>
   value.unwrap()[key] = chunkValue
 }
 
+export const skipPending = <T>(callback: PropCallback<T>): PropCallback<T> => {
+  return (propValue: PropValue<T>) => {
+    if (!(propValue.error instanceof PendingPropError)) {
+      callback(propValue)
+    }
+  }
+}
+
 interface PropCallback<T> {
   (propValue: PropValue<T>): void
 }
@@ -336,7 +343,7 @@ type Definitely<T> = T extends Maybe<any> ? Exclude<T, undefined> : T
 export class PendingPropError extends Error {}
 export class CannotMutateValue extends Error {}
 
-class PropValue<T> {
+export class PropValue<T> {
   #value: T
   #error: Nullable<Error>
 
@@ -441,6 +448,10 @@ export class Prop<T> {
 
   onEnd(callback: Function) {
     this.#endCallbacks.push(callback);
+  }
+
+  get subscriberCount(): number {
+    return Object.keys(this.#callbacks).length;
   }
 
   #runCallbacks(): void {

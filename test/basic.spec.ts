@@ -1,212 +1,196 @@
+import { PendingPropError, skipPending } from './../src/index';
 import test from 'ava'
-import { Prop } from "../src/index.js"
+import { Prop, PropValue, filter, map, uniq, mapUniq } from "../src/index.js"
 
-test('Prop holds and returns value', t => {
+test('Prop returns last value as PropValue', t => {
   const prop = new Prop(0)
-  t.is(prop.value, 0)
-  t.true(prop.isInitialized);
+  t.is(prop.last.value, 0)
+  t.is(prop.last.error, null)
+})
+
+test('PropValue has unwrap method', t => {
+  const prop = new Prop(0)
+  t.is(prop.last.unwrap(), 0)
+  const error = new Error()
+  prop.setError(error)
+  let lastError: Error
+  try {
+    prop.last.unwrap()
+  } catch (e) {
+    t.is(e, error, 'error was not raised')
+  }
+  prop.last.unwrap(e => { lastError = e })
+  t.is(lastError!, error, 'onError callback was not called')
 })
 
 test('Prop provides methods to set value', t => {
   const prop = new Prop(0)
   prop.set(1)
-  t.is(prop.value, 1)
+  t.is(prop.last.value, 1)
   prop.next(2)
-  t.is(prop.value, 2)
-  prop.value = 3
-  t.is(prop.value, 3)
+  t.is(prop.last.value, 2)
+  prop.update(x => x.value + 1)
+  t.is(prop.last.value, 3)
+})
+
+test('Prop provides methods to set error', t => {
+  const prop = new Prop(0)
+  const error = new Error()
+  prop.setError(error)
+  t.is(prop.last.value, 0, 'value was changed after calling setError')
+  t.is(prop.last.error, error)
 })
 
 test('Prop notifies subscribers when value is changed', t => {
-  let notified = -1
+  let notified: PropValue<number>
   let prop = new Prop(0)
   prop.subscribe(x => {
     notified = x
   })
-  t.is(notified, 0, 'subscriber was not notified of initial value')
-  prop.value = 1
-  t.is(notified, 1, 'subscriber was not notified of updated value')
+  t.is(notified!.unwrap(), 0, 'subscriber was not notified of initial value')
+  prop.set(1)
+  t.is(notified!?.unwrap(), 1, 'subscriber was not notified of updated value')
 })
 
 test('subscribe with no initial notification', t => {
-  let notified = -1
+  let notified: PropValue<number> | undefined = undefined
   let prop = new Prop(0)
   prop.subscribe(x => {
     notified = x
   }, false)
-  t.is(notified, -1, 'subscriber was notified of initial value with immediate notification disabled')
-  prop.value = 1
-  t.is(notified, 1, 'subscriber was not notified of updated value with immediate notification disabled')
+  t.is(notified, undefined, 'subscriber was notified of initial value with immediate notification disabled')
+  prop.set(1)
+  t.is(notified!.unwrap(), 1, 'subscriber was not notified of updated value with immediate notification disabled')
 })
 
-test('pending Prop has undefined value and does not notify subscribers until initialized', t => {
+test('pending Prop has undefined value and PendingPropError error', t => {
   let notified = -1
+  let error
   const prop = Prop.pending<number>()
   prop.subscribe(x => {
-    notified = x
+    notified = x.value
+    error = x.error
   })
-  t.false(prop.isInitialized)
-  t.is(prop.value, undefined as any)
-  t.is(notified, -1, 'subscriber was notified of initial value on pending Prop')
-  prop.value = 1
-  t.is(notified, 1, 'subscriber was not notified of updated value on pending Prop')
+  t.is(notified, undefined as any)
+  t.true(error instanceof PendingPropError)
+  prop.set(1)
+  t.is(notified, 1)
+  t.is(error, null)
+})
+
+test('skipPending method suppresses PendingPropError in subscribe callback', t => {
+  let notified = -1
+  let error
+  const prop = Prop.pending<number>()
+  prop.subscribe(skipPending(x => {
+    notified = x.value
+    error = x.error
+  }))
+  console.log(notified)
+  t.is(notified, -1)
+  prop.set(1)
+  t.is(notified, 1, 'subscriber was not notified of updated value')
+  t.is(error, null, 'error was not set to null after updated value')
+  prop.setError(new Error())
+  t.true(error instanceof Error, 'subscriber was not notified of updated error')
 })
 
 test('subscribe() call returns unsubscribe function', t => {
   let notified = -1
   let prop = new Prop(0)
   let unsub = prop.subscribe(x => {
-    notified = x
+    notified = x.value
   })
   t.is(notified, 0)
   unsub()
-  prop.value = 1
+  prop.set(1)
   t.is(notified, 0, 'subscriber was notified after unsubscribing')
-  t.is(Object.keys(prop['callbacks']).length, 0, 'callback was not cleared after unsubscribing')
+  t.is(prop.subscriberCount, 0, 'callback was not cleared after unsubscribing')
 })
 
 test('ended Prop does not notify subscribers', t => {
   let notified = -1
   const prop = new Prop(0)
   prop.subscribe(x => {
-    notified = x
+    notified = x.value
   })
   t.is(notified, 0)
   prop.end()
-  prop.value = 1
+  prop.set(1)
   t.is(notified, 0)
-  t.is(prop.value, 1, 'subscriber was notified after prop ended')
+  t.is(prop.last.value, 1)
 })
 
-test('ended Prop', t => {
+test('onEnd callback', t => {
   let ended = false
   const prop = new Prop(0)
   prop.onEnd(() => { ended = true })
-  t.false(prop.isEnded)
+  t.false(prop.ended)
   prop.end()
   t.true(ended, 'end callback was not called')
-  t.true(prop.isEnded, 'isEnded property was not updated')
-  t.is(Object.keys(prop['callbacks']).length, 0)
-  t.is(prop['endCallbacks'].length, 0)
+  t.true(prop.ended, 'isEnded property was not updated')
+  t.is(prop.subscriberCount, 0)
 })
 
 test('filtering props', t => {
   let notified = -1
   const prop = new Prop(0)
-  prop.filter(x => x % 2 === 0)
-    .subscribe(x => { notified = x })
-  prop.value = 1
+  filter(prop, x => x.value % 2 === 0)
+    .subscribe(x => { notified = x.value })
+  prop.set(1)
   t.is(notified, 0, 'subscriber was notified of filtered value');
-  prop.value = 2
+  prop.set(2)
   t.is(notified, 2);
-  prop.value = 3
+  prop.set(3)
   t.is(notified, 2, 'subscriber was notified of filtered value');
-  prop.value = 8
+  prop.set(8)
   t.is(notified, 8);
 })
 
 test('unique prop values', t => {
   let notifiedTimes = 0
   const prop = Prop.pending()
-  const uniq = prop.uniq()
-  uniq.subscribe(_ => { notifiedTimes++ })
-  prop.value = 1
-  t.is(notifiedTimes, 1);
-  prop.value = 1
-  t.is(notifiedTimes, 1, 'subscriber was notified of repeated value');
-  prop.value = 2
-  t.is(notifiedTimes, 2);
-  uniq.end();
-  t.is(Object.keys(prop['callbacks']).length, 0, 'callback was not cleared after uniq ended')
+  const uniqProp = uniq(prop)
+  uniqProp.subscribe(_ => { notifiedTimes++ })
+  t.is(notifiedTimes, 1, 'subscriber was not notified of pending value');
+  prop.set(1)
+  t.is(notifiedTimes, 2, 'subscriber was not notified of first unique value');
+  prop.set(1)
+  t.is(notifiedTimes, 2, 'subscriber was notified of repeated value');
+  prop.set(2)
+  t.is(notifiedTimes, 3, 'subscriber was not notified of second unique value');
+  uniqProp.end();
+  t.is(prop.subscriberCount, 0, 'callback was not cleared after unsubscribing')
 })
 
 test('mapping props', t => {
   let notified = -1
   const prop = new Prop(0)
-  const mapped = prop.map(x => x*x)
-  mapped.subscribe(x => { notified = x })
-  prop.value = 1
+  const mapped = map(prop, x => Math.pow(x.value, 2))
+  mapped.subscribe(x => { notified = x.value })
+  prop.set(1)
   t.is(notified, 1);
-  prop.value = 2
+  prop.set(2)
   t.is(notified, 4);
-  prop.value = 3
+  prop.set(3)
   t.is(notified, 9);
   mapped.end();
-  t.is(Object.keys(prop['callbacks']).length, 0, 'callback was not cleared after mapped ended')
+  t.is(prop.subscriberCount, 0)
 })
 
 test('mapping unique prop values', t => {
   let notifiedTimes = 0, notified = -1
   const prop = Prop.pending<number>()
-  const mapped = prop.mapUniq(x => x*x)
-  mapped.subscribe(x => { notified = x; notifiedTimes++ })
-  prop.value = 1
-  t.is(notifiedTimes, 1);
-  prop.value = 1
-  t.is(notifiedTimes, 1, 'subscriber was notified of repeated value');
-  prop.value = 2
-  t.is(notifiedTimes, 2);
-  t.is(notified, 4);
+  const mapped = mapUniq(prop, x => Math.pow(x.value, 2))
+  mapped.subscribe(x => { notified = x.value; notifiedTimes++ })
+  t.is(notifiedTimes, 1, 'subscriber was not notified of pending value');
+  prop.set(1)
+  t.is(notifiedTimes, 2, 'subscriber was not notified of first unique value');
+  prop.set(1)
+  t.is(notifiedTimes, 2, 'subscriber was notified of repeated value');
+  prop.set(2)
+  t.is(notifiedTimes, 3, 'subscriber was not notified of second unique value');
+  t.is(notified, 4, 'subscrber was not notified of unique mapped value');
   mapped.end();
-  t.is(Object.keys(prop['callbacks']).length, 0, 'callback was not cleared after mapped ended')
-})
-
-test('merging prop into another prop', t => {
-  let notified = -1
-  const prop = new Prop(0)
-  prop.subscribe(x => { notified = x })
-  const merged = new Prop(1)
-  prop.merge(merged);
-  t.is(notified, 1);
-  prop.value = 2
-  t.is(notified, 2);
-  merged.value = 3
-  t.is(notified, 3, 'subscriber was not notified of merged value');
-})
-
-test('prop with error', t => {
-  let notified = -1
-  let error
-  const prop = new Prop(0)
-  prop.subscribe(x => { notified = x })
-  prop.error.subscribe(x => { error = x })
-  t.false(prop.error.isInitialized, 'error prop was initialized before receiving error')
-  t.is(error, undefined, 'subscriber was notified of initial error value')
-  prop.error.value = new Error()
-  t.true(error instanceof Error, 'error subscriber was not notified');
-  prop.value = 1
-  t.is(error, null, 'error was not cleared when new value was pushed')
-})
-
-test('update object prop using update method', t => {
-  let notified = { badger: '' }, valueInCallback: Object
-  const prop = new Prop({ badger: 'badger' })
-  prop.subscribe(x => { notified = x })
-  prop.update(x => {
-    valueInCallback = {...x}
-    x.badger = 'mushroom'
-  })
-  t.deepEqual(valueInCallback!, { badger: 'badger' })
-  t.is(notified.badger, 'mushroom', 'prop was not updated via update method')
-})
-
-test('update pending object prop using update method', t => {
-  let notified = { badger: '' }, valueInCallback: any
-  const prop = Prop.pending<typeof notified>()
-  prop.subscribe(x => { notified = x })
-  prop.update(x => {
-    valueInCallback = x
-    if (x) x.badger = 'mushroom'
-  })
-  t.is(valueInCallback!, undefined)
-  t.is(notified.badger, '', 'pending prop was updated via update method')
-})
-
-test('update object using tap method', t => {
-  let notified = { badger: '' }
-  const prop = new Prop({ badger: 'badger' })
-  prop.subscribe(x => { notified = x })
-  prop.value.badger = 'mushroom'
-  prop.tap()
-  t.is(notified.badger, 'mushroom', 'prop was not updated via tap method')
+  t.is(prop.subscriberCount, 0, 'callback was not cleared after unsubscribing')
 })
