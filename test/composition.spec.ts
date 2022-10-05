@@ -80,7 +80,6 @@ test('dict has PendingPropError when all props are pending', t => {
   let notified: PropValue<{num: number, deep: {str: string}}>
   const composed = dict({num, deep: {str}})
   composed.subscribe(x => { notified = x })
-  console.log(notified.error)
   t.true(notified!.error instanceof PendingPropError)
 })
 

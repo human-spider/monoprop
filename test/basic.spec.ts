@@ -30,7 +30,7 @@ test('Prop provides methods to set value', t => {
   t.is(prop.last.value, 1)
   prop.next(2)
   t.is(prop.last.value, 2)
-  prop.update(x => x.value + 1)
+  prop.update(x => x + 1)
   t.is(prop.last.value, 3)
 })
 

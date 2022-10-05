@@ -26,7 +26,7 @@ export const of = <T extends object>(property: Prop<T>): PropBindings<T> => {
         }
         const propName = String(prop);
         if (!prop$ || prop$.ended) {
-          prop$ = property.bind(get(propName as keyof T) as PropMapper<T, Definitely<T[keyof T]>>, set(propName as keyof T));
+          prop$ = bind(property, get(propName as keyof T) as PropMapper<T, T[keyof T]>, set(propName as keyof T));
           propCache[propName] = prop$;
         }
         return prop$;
@@ -58,9 +58,12 @@ export const into = <T extends object>(property: Prop<T>): DeepPropBindings<T> =
           let cached = propCache[cacheKey]
           if (!cached || cached.ended) {
             const localPath = [...path]
-            propCache[cacheKey] = property.bind(
-              value => deepGet(value, localPath),
-              (value, chunk) => deepSet(value, localPath, chunk)
+            propCache[cacheKey] = bind(property,
+              value => deepGet(value.unwrap(), localPath),
+              (value, chunk) => {
+                deepSet(value, localPath, chunk.unwrap())
+                return value;
+              }
             )
           }
           path.length = 0
@@ -226,14 +229,24 @@ export const mapUniq = <T, K>(prop: Prop<T>, mapper: PropMapper<T, K>): Prop<K> 
 }
 
 interface PropUpdater<T, K> {
-  (propValue: PropValue<T>, chunkValue: PropValue<K>): T
+  (propValue: T, chunkValue: PropValue<K>): T
 }
 
 export const bind = <T extends Object, K>(prop: Prop<T>, mapper: PropMapper<T, K>, updater: PropUpdater<T, K>): Prop<K> => {
   const derived = mapUniq(prop, mapper);
+  let newValue
   prop.onEnd(derived.subscribe(chunkValue => {
-    prop.update(value => updater(value, chunkValue));
-  }));
+    try {
+      newValue = updater(prop.last.value, chunkValue)
+    } catch (error) {
+      prop.setError(error)
+    }
+    if (newValue !== undefined) {
+      prop.set(newValue);
+    } else {
+      prop.tap()
+    }
+  }, false));
   return derived;
 }
 
@@ -367,10 +380,11 @@ export const some = (...props: Prop<any>[]): Prop<boolean> => {
 }
 
 type GetterFn<T extends object, K extends keyof T> = { (value: PropValue<T>): T[K] }
-type SetterFn<T extends object, K extends keyof T> = { (value: PropValue<T>, chunkValue: T[K]): void }
+type SetterFn<T extends object, K extends keyof T> = { (value: T, chunkValue: PropValue<T[K]>): T }
 export const get = <T extends object, K extends keyof T>(key: K): GetterFn<T, K> => value => value.unwrap()[key]
 export const set = <T extends object, K extends keyof T>(key: K): SetterFn<T, K> => (value, chunkValue) => {
-  value.unwrap()[key] = chunkValue
+  value[key] = chunkValue.unwrap()
+  return value
 }
 
 export const skipPending = <T>(callback: PropCallback<T>): PropCallback<T> => {
@@ -445,13 +459,17 @@ export class Prop<T> {
 
   set = this.next
 
+  tap(): void {
+    this.#runCallbacks()
+  }
+
   setError(error: Error): void {
     this.next(this.last.value, error);
   }
 
-  update(updateFn: (propValue: PropValue<T>) => T): void {
+  update(updateFn: (value: T) => T): void {
     try {
-      this.next(updateFn(this.last))
+      this.next(updateFn(this.last.value))
     } catch (error) {
       this.setError(error)
     }
