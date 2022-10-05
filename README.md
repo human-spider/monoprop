@@ -68,7 +68,38 @@ Every `Prop` comes with built in error handling in form of `error` property, whi
 
 ## Composition
 
-So far we have only defined side effects for a single Prop. This can be very limiting, and in real scenarios you will probably want to base your logic on more than one value. This is possible with `compose` method that takes two or more Props and returns a Prop that updates with a tuple of their current values whenever any of these Props changes.
+So far we have only defined side effects for a single Prop. This can be very limiting, and in real scenarios you will probably want to base your logic on more than one value. The `subscribe` helper function lets you define side effects for multiple Props.
+
+```ts
+  subscribe([divisionResult, divisionResult.error], (result, error) => {
+    if (!error && result > 10) {
+      console.log('10 has been surpassed!')
+    }
+  })
+
+  // liftError helper simplifies this common pattern
+  subscribe(liftError(divisionResult), (result, error) => {
+    ...
+  })
+```
+
+You can also map and filter multiple props using `map` and `filter` helper methods that work in a similar fashion.
+
+```ts
+  // this will create a boolean prop that will tell whether 10 has been surpassed yet
+  const is10Surpassed = map(
+    liftError(divisionResult),
+    (result, error) => !error && result > 10
+  )
+
+  // this will create a filtered prop that will return value and error only if 10 has been surpassed
+  const onlyWhen10Surpassed = filter(
+    liftError(divisionResult),
+    (result, error) => !error && result > 10
+  )
+```
+
+All of this works via the `compose` method that takes two or more Props and returns a Prop that updates with a tuple of their current values whenever any of these Props changes. You can use `compose` directly to create reusable composed props.
 
 ```ts
   const results = compose(divisionResult, divisionResult.error)
@@ -100,7 +131,7 @@ These helpers allow you to easily build global (or semi-global) tracked state fr
 
 ## Objects and two-way binding
 
-Let's wrap an object in a Prop and see how you can work with its contents. The most simple way to access its properties is through basic `map` method.
+Let's wrap an object in a Prop and see how you can work with its contents. The most simple way to access its properties is through basic `map` method, which creates an one way binding in the form of child Prop that will follow the value of the `count` property of the parent Prop's value.
 
 ```ts
   const prop = new Prop({
@@ -110,3 +141,52 @@ Let's wrap an object in a Prop and see how you can work with its contents. The m
   // or using get helper:
   const count = prop.map(get('count'))
 ```
+You can create a two-way binding by using the `bind` method, which takes a setter function in addition to a getter function, and returns a Prop that will update the parent every time child prop is updated.
+
+```ts
+  const count = prop.bind(
+    value => value.count
+    (value, countValue) => { value.count = countValue }
+  )
+
+  // or using get and set helpers:
+  const count = prop.bind(get('count'), set('count'))
+
+  count.set(3) // prop value is now { count: 3 }
+```
+
+This common pattern can be used to bind object properties to form value, and many more things. However, it can be tedious to manually define bindings for all properties you need to expose. The `of` helper provides a much shorted way to create two way bindings for properties.
+
+```ts
+  const count = of(prop).count
+  count.value = 3  // prop value is now { count: 3 }
+```
+
+This form has more advantages than just being shorter. The `of` helper will cache and reuse bindings for you, so it's safe to call `of(prop).count` many times without polluting the memory with identical props.
+
+```ts
+  // the following calls do not create new props
+  of(prop).count.subscribe(console.log)
+  of(prop).count.value = 3
+  of(prop).count.map(x => -x)
+```
+
+The `of` helper is type safe - if the base object has a defined type, properties accessed via `of` helper will carry over their types to derived Props. In the above case, `of(prop).count` has type `Prop<number>`. `of` will also tell you if you're trying to access a property that doesn't exist on the target object.
+
+The `of` helper only allows you to access top level properties of the target object. To traverse deeper into nested objects, Monoprop also provides the `into` helper, which works in a similar way and also provides caching and type safety for derived Props.
+
+```ts
+  const prop = new Prop({
+    inner: {
+      count: 0
+    }
+  })
+  const count = into(prop).inner.count.$
+  count.value = 3 // prop value is now { inner: { count: 3 } }
+```
+
+The main difference compared to `of` helper is that you have to use special `.$` property at the end to specify that you're done traversing the object and want to get a property at the current level instead of going deeper into it.
+
+> Bindings can be fragile, so use them carefully. A sure way to break your bindings is to change the structure of the target object so that the target property no longer exists on it. This is especially true when using the `into` helper, as the number of things that can go wrong increases as you deal with more nested properties that can be removed. If you actually need to handle the case where properties may not exist, use `bind` method with custom getter and setter functions that can handle this case.
+
+> Another gotcha is that all other ways to make derived properties create one-way bindings, so attaching bindings to derived props created with functions like `map` and `filter` will not let you update the target prop. To avoid issues, always attach bindings to props that directly hold the target object.

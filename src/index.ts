@@ -194,8 +194,11 @@ export const merge = <T>(...props: Prop<T>[]): Prop<Maybe<T>> => {
 }
 
 type PropSubject<T> = T extends Prop<infer K> ? K : never
+type ComposedPropValues<T> = T extends Prop<any>[] ?
+  {[K in keyof T]: PropSubject<T[K]>}
+  : never
 type ComposedProp<T> = T extends Prop<any>[] ?
-  Prop<{[K in keyof T]: PropSubject<T[K]>}> 
+  Prop<ComposedPropValues<T>> 
   : never
 
 export const compose = <T extends Array<Prop<any>>>(...props: T): ComposedProp<T> => {
@@ -223,6 +226,22 @@ export const compose = <T extends Array<Prop<any>>>(...props: T): ComposedProp<T
     }
   }
   return prop;
+}
+
+export const subscribe = <T extends Prop<any>[]>(props: T, callbackFn: (...values: ComposedPropValues<T>) => void): Function => {
+  return compose(...props).subscribe((values: ComposedPropValues<T>) => {
+    callbackFn(...values);
+  })
+}
+
+export const map = <T extends Prop<any>[], K>(props: T, mapperFn: (...values: ComposedPropValues<T>) => Definitely<K>): Prop<K> => {
+  const prop = compose(...props);
+  return prop.map<K>(values => mapperFn(...values as ComposedPropValues<T>));
+}
+
+export const filter = <T extends Prop<any>[]>(props: T, filterFn: (...values: ComposedPropValues<T>) => boolean): ComposedProp<T> => {
+  const prop = compose(...props);
+  return prop.filter(values => filterFn(...values as ComposedPropValues<T>)) as ComposedProp<T>;
 }
 
 type ObjectWithProps = { [key: string | symbol]: Prop<any> | ObjectWithProps }
@@ -278,6 +297,10 @@ export const set = <T extends object, K extends keyof T>(key: K): SetterFn<T, K>
   if (value[key] !== chunkValue) {
     value[key] = chunkValue
   }
+}
+
+export const liftError = <T>(prop: Prop<T>): [Prop<T>, Prop<Maybe<Nullable<Error>>>] => {
+  return [prop, prop.error];
 }
 
 interface PropCallback<T> {
