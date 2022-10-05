@@ -40,6 +40,12 @@ test('Prop provides methods to set error', t => {
   prop.setError(error)
   t.is(prop.last.value, 0, 'value was changed after calling setError')
   t.is(prop.last.error, error)
+  const error2 = new Error()
+  prop.update(_ => {
+    throw error2
+  })
+  t.is(prop.last.value, 0, 'value was changed after calling setError')
+  t.is(prop.last.error, error2)
 })
 
 test('Prop notifies subscribers when value is changed', t => {
