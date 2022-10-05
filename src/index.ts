@@ -268,9 +268,6 @@ const getAggregateError = (props: Prop<any>[]): Nullable<AggregateError> => {
   if (!errors.length) {
     return null
   }
-  if (!errors.find(e => e && !(e instanceof PendingPropError))) {
-    return new PendingPropError();
-  }
   return AggregateError(errors)
 }
 
@@ -321,7 +318,7 @@ export class DictError extends Error {
 	}
 }
 
-const getDictError = (template: ObjectWithProps): Nullable<DictError | PendingPropError> => {
+const getDictError = (template: ObjectWithProps): Nullable<DictError> => {
   let result = {}, errors: Array<Error> = []
 
   walkObject(template, [], (x, path: string[]) => {
@@ -337,9 +334,6 @@ const getDictError = (template: ObjectWithProps): Nullable<DictError | PendingPr
 
   if (!errors.length) {
     return null
-  }
-  if (!errors.find(e => e && !(e instanceof PendingPropError))) {
-    return new PendingPropError();
   }
   return new DictError(result)
 }
@@ -387,24 +381,12 @@ export const set = <T extends object, K extends keyof T>(key: K): SetterFn<T, K>
   return value
 }
 
-export const skipPending = <T>(callback: PropCallback<T>): PropCallback<T> => {
-  return (propValue: PropValue<T>) => {
-    if (!(propValue.error instanceof PendingPropError)) {
-      callback(propValue)
-    }
-  }
-}
-
 interface PropCallback<T> {
   (propValue: PropValue<T>): void
 }
 
 type Nullable<T> = T | null
 type Maybe<T> = T | undefined
-type Definitely<T> = T extends Maybe<any> ? Exclude<T, undefined> : T
-
-export class PendingPropError extends Error {}
-export class CannotMutateValue extends Error {}
 
 export class PropValue<T> {
   #value: T
@@ -439,13 +421,15 @@ export class Prop<T> {
   #ended = false;
   #subscriberCount = 0;
   #last: PropValue<T>
+  #initialized: boolean = false
 
   static pending<T>(): Prop<T> {
-    return new Prop<T>(undefined, new PendingPropError());
+    return new Prop<T>(undefined, null, false);
   }
 
-  constructor(value: Maybe<T>, error: Nullable<Error> = null) {
+  constructor(value: Maybe<T>, error: Nullable<Error> = null, initialize = true) {
     this.#last = new PropValue(value, error)
+    this.#initialized = initialize
   }
 
   get last(): PropValue<T> {
@@ -454,6 +438,7 @@ export class Prop<T> {
 
   next(value: T, error: Nullable<Error> = null): void {
     this.#last = new PropValue(value, error)
+    this.#initialized = true
     this.#runCallbacks()
   }
 
@@ -475,7 +460,7 @@ export class Prop<T> {
     }
   }
 
-  subscribe(callback: PropCallback<T>, notifyImmediately = true): Function {
+  subscribe(callback: PropCallback<T>, notifyImmediately = this.#initialized): Function {
     if (this.#ended) {
       return () => {}
     }

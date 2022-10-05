@@ -70,7 +70,7 @@ test('subscribe with no initial notification', t => {
   t.is(notified!.unwrap(), 1, 'subscriber was not notified of updated value with immediate notification disabled')
 })
 
-test('pending Prop has undefined value and PendingPropError error', t => {
+test('pending Prop does not notify subscribers', t => {
   let notified = -1
   let error
   const prop = Prop.pending<number>()
@@ -78,27 +78,11 @@ test('pending Prop has undefined value and PendingPropError error', t => {
     notified = x.value
     error = x.error
   })
-  t.is(notified, undefined as any)
-  t.true(error instanceof PendingPropError)
+  t.is(notified, -1)
+  t.is(error, undefined)
   prop.set(1)
   t.is(notified, 1)
   t.is(error, null)
-})
-
-test('skipPending method suppresses PendingPropError in subscribe callback', t => {
-  let notified = -1
-  let error
-  const prop = Prop.pending<number>()
-  prop.subscribe(skipPending(x => {
-    notified = x.value
-    error = x.error
-  }))
-  t.is(notified, -1)
-  prop.set(1)
-  t.is(notified, 1, 'subscriber was not notified of updated value')
-  t.is(error, null, 'error was not set to null after updated value')
-  prop.setError(new Error())
-  t.true(error instanceof Error, 'subscriber was not notified of updated error')
 })
 
 test('subscribe() call returns unsubscribe function', t => {
@@ -158,13 +142,12 @@ test('unique prop values', t => {
   const prop = Prop.pending()
   const uniqProp = uniq(prop)
   uniqProp.subscribe(_ => { notifiedTimes++ })
-  t.is(notifiedTimes, 1, 'subscriber was not notified of pending value');
   prop.set(1)
-  t.is(notifiedTimes, 2, 'subscriber was not notified of first unique value');
+  t.is(notifiedTimes, 1, 'subscriber was not notified of first unique value');
   prop.set(1)
-  t.is(notifiedTimes, 2, 'subscriber was notified of repeated value');
+  t.is(notifiedTimes, 1, 'subscriber was notified of repeated value');
   prop.set(2)
-  t.is(notifiedTimes, 3, 'subscriber was not notified of second unique value');
+  t.is(notifiedTimes, 2, 'subscriber was not notified of second unique value');
   uniqProp.end();
   t.is(prop.subscriberCount, 0, 'callback was not cleared after unsubscribing')
 })
@@ -189,14 +172,13 @@ test('mapping unique prop values', t => {
   const prop = Prop.pending<number>()
   const mapped = mapUniq(prop, x => Math.pow(x.value, 2))
   mapped.subscribe(x => { notified = x.value; notifiedTimes++ })
-  t.is(notifiedTimes, 1, 'subscriber was not notified of pending value');
   prop.set(1)
-  t.is(notifiedTimes, 2, 'subscriber was not notified of first unique value');
+  t.is(notifiedTimes, 1, 'subscriber was not notified of first unique value');
   prop.set(1)
-  t.is(notifiedTimes, 2, 'subscriber was notified of repeated value');
+  t.is(notifiedTimes, 1, 'subscriber was notified of repeated value');
   prop.set(2)
-  t.is(notifiedTimes, 3, 'subscriber was not notified of second unique value');
-  t.is(notified, 4, 'subscrber was not notified of unique mapped value');
+  t.is(notifiedTimes, 2, 'subscriber was not notified of second unique value');
+  t.is(notified, 3, 'subscrber was not notified of unique mapped value');
   mapped.end();
   t.is(prop.subscriberCount, 0, 'callback was not cleared after unsubscribing')
 })
