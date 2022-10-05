@@ -249,13 +249,13 @@ const getAggregateError = (props: Prop<any>[]): Nullable<AggregateError> => {
   let errors = [] as Error[]
   for(let i = 0; i < props.length; i++) {
     if (props[i] instanceof Prop && props[i].last.error) {
-      errors.push(props[i].last.error!)
+      errors[i] = (props[i].last.error!)
     }
   }
   if (!errors.length) {
     return null
   }
-  if (!errors.find(e => !(e instanceof PendingPropError))) {
+  if (!errors.find(e => e && !(e instanceof PendingPropError))) {
     return new PendingPropError();
   }
   return AggregateError(errors)
@@ -289,6 +289,47 @@ type ComposedPropObject<T extends object> = {
       ComposedPropObject<T[K]> 
       : never 
 }
+type DictErrors<T extends object> = {
+  [K in keyof T]: T[K] extends Prop<infer P> ? P
+    : T[K] extends ObjectWithProps ? 
+      ComposedPropObject<T[K]> 
+      : never 
+}
+
+export class DictError extends Error {
+  errors: Object
+
+	constructor(errors: Object, message = '') {
+		super(message);
+		if (!isPlainObject(errors)) {
+			throw new TypeError(`${errors} is not a plain object`);
+		}
+		this.errors = errors;
+	}
+}
+
+const getDictError = (template: ObjectWithProps): Nullable<DictError | PendingPropError> => {
+  let result = {}, errors: Array<Error> = []
+
+  walkObject(template, [], (x, path: string[]) => {
+    if (x instanceof Prop) {
+      if (x.last.error) {
+        deepSet(result, path, x.last.error);
+        errors.push(x.last.error);
+      }
+    } else {
+      deepSet(result, path, x)
+    }
+  });
+
+  if (!errors.length) {
+    return null
+  }
+  if (!errors.find(e => e && !(e instanceof PendingPropError))) {
+    return new PendingPropError();
+  }
+  return new DictError(result)
+}
 
 export const dict = <T extends ObjectWithProps>(template: T): Prop<ComposedPropObject<T>> => {
   const res = {} as ComposedPropObject<T>,
@@ -303,11 +344,11 @@ export const dict = <T extends ObjectWithProps>(template: T): Prop<ComposedPropO
       deepSet(res, path, x)
     }
   });
-  const prop = new Prop(res, getAggregateError(props))
+  const prop = new Prop(res, getDictError(template))
   for (let i = 0; i < props.length; i++) {
     props[i].subscribe((newValue) => {
       deepSet(res, paths[i], newValue.value);
-      prop.next(res, getAggregateError(props));
+      prop.next(res, getDictError(template));
     });
   }
   return prop;

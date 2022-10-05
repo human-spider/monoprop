@@ -1,4 +1,4 @@
-import { Prop, tuple, dict, some, every, not, PropValue, map, PendingPropError } from './../src/index';
+import { Prop, tuple, dict, some, every, not, PropValue, map, PendingPropError, DictError } from './../src/index';
 import test from 'ava'
 
 test('tuple', t => {
@@ -45,7 +45,7 @@ test('tuple has AggregateError when some props have errors', t => {
   let notified: PropValue<[number, string]>
   composed.subscribe(x => { notified = x })
   t.true(notified!.error instanceof AggregateError)
-  t.deepEqual(notified!.error!.errors, [error])
+  t.deepEqual(notified!.error!.errors, [undefined, error])
 })
 
 test('dict', t => {
@@ -80,10 +80,11 @@ test('dict has PendingPropError when all props are pending', t => {
   let notified: PropValue<{num: number, deep: {str: string}}>
   const composed = dict({num, deep: {str}})
   composed.subscribe(x => { notified = x })
+  console.log(notified.error)
   t.true(notified!.error instanceof PendingPropError)
 })
 
-test('dict has AggregateError when some props have errors', t => {
+test('dict has DictError when some props have errors', t => {
   const num = new Prop(0)
   const str = new Prop('')
   const error = new Error()
@@ -91,8 +92,10 @@ test('dict has AggregateError when some props have errors', t => {
   let notified: PropValue<{num: number, deep: {str: string}}>
   const composed = dict({num, deep: {str}})
   composed.subscribe(x => { notified = x })
-  t.true(notified!.error instanceof AggregateError)
-  t.deepEqual(notified!.error!.errors, [error])
+  t.true(notified!.error instanceof DictError)
+  t.deepEqual(notified!.error?.errors, { deep: { str: error } }, 'DictError was not set')
+  str.next('snake')
+  t.deepEqual(notified!.error, null, 'DictError was not cleared after component Prop was updated')
 })
 
 test('logical operators', t => {
