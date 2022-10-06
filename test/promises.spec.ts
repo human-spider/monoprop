@@ -1,4 +1,4 @@
-import { fromPromise, mergePromise, Prop, asyncUpdate, PropValue } from './../src/index';
+import { fromPromise, mergePromise, Prop, PropValue } from './../src/index';
 import test from 'ava'
 import { sleep } from './helper.js'
 
