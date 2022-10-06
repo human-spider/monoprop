@@ -1,18 +1,18 @@
 import test from 'ava'
 import { JSDOM } from 'jsdom'
-import { Prop, mergeEvent, fromEvent } from "../src/index.js"
+import { Prop, mergeEvent, fromEvent, PropValue } from "../src/index.js"
 import { sleep } from './helper.js'
 
 const { window } = new JSDOM() as { window: any }
 const document = window.document as Document
 
 test('fromEvent', t => {
-  let notified: Event | null
+  let notified: PropValue<Event>
   const prop = fromEvent(document, 'click')
   prop.subscribe(x => { notified = x })
   const event = new window.Event('click')
   document.dispatchEvent(event)
-  t.is(notified!, event)
+  t.is(notified!.value, event)
 })
 
 test.serial('fromEvent with throttle', async t => {
@@ -58,13 +58,13 @@ test.serial('fromEvent with debounce leading', async t => {
 })
 
 test('mergeEvent', t => {
-  let notified: Event | null
+  let notified: PropValue<Event>
   const prop = Prop.pending<Event>()
   mergeEvent(prop, document, 'click')
   prop.subscribe(x => { notified = x })
   const event = new window.Event('click')
   document.dispatchEvent(event)
-  t.is(notified!, event)
+  t.is(notified!.value, event)
 })
 
 test.serial('mergeEvent with throttle', async t => {

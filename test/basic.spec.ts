@@ -1,4 +1,3 @@
-import { PendingPropError, skipPending } from './../src/index';
 import test from 'ava'
 import { Prop, PropValue, filter, map, uniq, mapUniq } from "../src/index.js"
 
@@ -178,7 +177,7 @@ test('mapping unique prop values', t => {
   t.is(notifiedTimes, 1, 'subscriber was notified of repeated value');
   prop.set(2)
   t.is(notifiedTimes, 2, 'subscriber was not notified of second unique value');
-  t.is(notified, 3, 'subscrber was not notified of unique mapped value');
+  t.is(notified, 4, 'subscrber was not notified of unique mapped value');
   mapped.end();
   t.is(prop.subscriberCount, 0, 'callback was not cleared after unsubscribing')
 })

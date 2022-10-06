@@ -86,13 +86,13 @@ type useEventOptions = {
   transform?: (e: Event) => any
 }
 
-export const fromEvent = (target: Node, eventName: string, options: useEventOptions = {}): Prop<Maybe<Event>> => {
+export const fromEvent = (target: Node, eventName: string, options: useEventOptions = {}): Prop<Event> => {
   const prop = Prop.pending<Event>();
   mergeEvent(prop, target, eventName, options);
   return prop;
 }
 
-export const mergeEvent = <T extends Event>(bus: Prop<Maybe<T>>, target: Node, eventName: string, options: useEventOptions = {}): void => {
+export const mergeEvent = <T extends Event>(bus: Prop<T>, target: Node, eventName: string, options: useEventOptions = {}): void => {
   let callback;
   if (options.transform && typeof options.transform === 'function') {
     callback = (event) => {
@@ -252,7 +252,7 @@ export const bind = <T extends Object, K>(prop: Prop<T>, mapper: PropMapper<T, K
 
 type PropSubject<T> = T extends Prop<infer K> ? K : never
 type ComposedPropValues<T> = T extends Prop<any>[] ?
-  {[K in keyof T]: PropSubject<T[K]>}
+  {[K in keyof T]: Maybe<PropSubject<T[K]>>}
   : never
 type ComposedProp<T> = T extends Prop<any>[] ?
   Prop<ComposedPropValues<T>> 
@@ -272,21 +272,28 @@ const getAggregateError = (props: Prop<any>[]): Nullable<AggregateError> => {
 }
 
 export const tuple = <T extends Array<Prop<any>>>(...props: T): ComposedProp<T> => {
-  const values = [] as PropSubject<T[keyof T]>[];
+  const values = [] as PropSubject<T[keyof T]>[]
+  let initialized = false
   for (let i = 0; i < props.length; i++) {
     if (props[i] instanceof Prop) {
       values.push(props[i].last.value);
+      initialized ||= props[i].initialized
     } else {
       values.push(props[i] as any);
     }
   }
-  const prop = new Prop(values, getAggregateError(props)) as ComposedProp<T>
+  let prop
+  if (initialized) {
+    prop = new Prop(values, getAggregateError(props)) as ComposedProp<T>
+  } else {
+    prop = Prop.pending<ComposedPropValues<T>>()
+  }
   for (let i = 0; i < props.length; i++) {
     if (props[i] instanceof Prop) {
-      props[i].subscribe(skipPending(x => {
+      props[i].subscribe(x => {
         values[i] = x.value;
         prop.next(values, getAggregateError(props));
-      }));
+      });
     }
   }
   return prop;
@@ -294,7 +301,7 @@ export const tuple = <T extends Array<Prop<any>>>(...props: T): ComposedProp<T> 
 
 type ObjectWithProps = { [key: string | symbol]: Prop<any> | ObjectWithProps }
 type ComposedPropObject<T extends object> = {
-  [K in keyof T]: T[K] extends Prop<infer P> ? P
+  [K in keyof T]: T[K] extends Prop<infer P> ? Maybe<P>
     : T[K] extends ObjectWithProps ? 
       ComposedPropObject<T[K]> 
       : never 
@@ -342,20 +349,27 @@ export const dict = <T extends ObjectWithProps>(template: T): Prop<ComposedPropO
   const res = {} as ComposedPropObject<T>,
     props: Array<Prop<any>> = new Array(),
     paths: string[][] = []
+  let initialized: boolean = false
   walkObject(template, [], (x, path: string[]) => {
     if (x instanceof Prop) {
       deepSet(res, path, x.last.value);
       props.push(x);
       paths.push(path)
+      initialized ||= x.initialized
     } else {
       deepSet(res, path, x)
     }
-  });
-  const prop = new Prop(res, getDictError(template))
+  })
+  let prop
+  if (initialized) {
+    prop = new Prop(res, getDictError(template))
+  } else {
+    prop = Prop.pending<ComposedPropObject<T>>()
+  }
   for (let i = 0; i < props.length; i++) {
     props[i].subscribe((newValue) => {
-      deepSet(res, paths[i], newValue.value);
-      prop.next(res, getDictError(template));
+      deepSet(res, paths[i], newValue.value)
+      prop.next(res, getDictError(template))
     });
   }
   return prop;
@@ -385,8 +399,8 @@ interface PropCallback<T> {
   (propValue: PropValue<T>): void
 }
 
-type Nullable<T> = T | null
-type Maybe<T> = T | undefined
+export type Nullable<T> = T | null
+export type Maybe<T> = T | undefined
 
 export class PropValue<T> {
   #value: T
@@ -434,6 +448,10 @@ export class Prop<T> {
 
   get last(): PropValue<T> {
     return this.#last;
+  }
+
+  get initialized(): boolean {
+    return this.#initialized;
   }
 
   next(value: T, error: Nullable<Error> = null): void {
