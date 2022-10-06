@@ -114,7 +114,7 @@ export const mergeEvent = <T extends Event>(bus: Prop<T>, target: Node, eventNam
   target.addEventListener(eventName, callback);
 }
 
-export const fromPromise = <T>(promise: Promise<T>): Prop<Maybe<T>> => {
+export const fromPromise = <T>(promise: Promise<T>): Prop<T> => {
   const prop = Prop.pending<T>();
   mergePromise(prop, promise);
   return prop;
@@ -130,10 +130,6 @@ export const mergePromise = <T>(prop: Prop<T>, promise: Promise<T>): void => {
       prop.setError(new Error(error));
     }
   });
-}
-
-export const asyncUpdate = <T>(prop: Prop<T>, updateFn: (value: PropValue<T>) => Promise<T>): void => {
-  mergePromise(prop, updateFn(prop.last))
 }
 
 const walkObject = (x: object, basePath: Array<string>, callback: (value: any, path: string[]) => void): void => {
