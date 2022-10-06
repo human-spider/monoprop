@@ -4,11 +4,11 @@
         "strictNullChecks": true,
         "esModuleInterop": true,
         "declaration": true,
-        "declarationDir": "dist",
         "emitDeclarationOnly": true,
         "moduleResolution": "Node",
         "strictFunctionTypes": true,
-        "noImplicitThis": true
+        "noImplicitThis": true,
+        "outFile": "dist/index.ts"
     },
     "lib": [
         "es2021.promise"
