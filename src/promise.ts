@@ -9,7 +9,7 @@ export const fromPromise = <T>(promise: Promise<T>): Prop<T> => {
 export const mergePromise = <T>(prop: Prop<T>, promise: Promise<T>): void => {
   promise.then((value: T) => {
     prop.next(value);
-  }).catch((error: any) => {
+  }, (error: any) => {
     if (error instanceof Error) {
       prop.setError(error);
     } else {

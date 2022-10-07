@@ -4,20 +4,6 @@ import { deepGet, deepSet } from "./helpers";
 import type { PropValue } from "./prop";
 import type { PropMapper } from './operations'
 
-
-  
-  // export const merge = <T>(...props: Prop<T>[]): Prop<Maybe<T>> => {
-  //   const prop = Prop.pending<T>();
-  //   for (let i = 0; i < props.length; i++) {
-  //     prop.onEnd(props[i].subscribe(x => {
-  //       prop.next(x);
-  //     }));
-  //   }
-  //   return prop;
-  // }
-  
-  
-  
 interface PropUpdater<T, K> {
   (propValue: T, chunkValue: PropValue<K>): T
 }

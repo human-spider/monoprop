@@ -17,8 +17,5 @@
     "esbuild": "^0.15.10",
     "jsdom": "^20.0.1",
     "typescript": "^4.8.4"
-  },
-  "dependencies": {
-    "throttle-debounce": "^5.0.0"
   }
 }

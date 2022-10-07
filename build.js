@@ -5,7 +5,7 @@ const config = {
   allowOverwrite: true,
   bundle: true,
   target: 'es2021',
-  external: Object.keys(dependencies),
+  external: Object.keys(dependencies || {}),
 }
 
 // build for iife

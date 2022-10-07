@@ -50,3 +50,13 @@ export const mapUniq = <T, K>(prop: Prop<T>, mapper: PropMapper<T, K>): Prop<K> 
   })
   return derived;
 }
+
+export const merge = <T>(...props: Prop<T>[]): Prop<T> => {
+  const prop = Prop.pending<T>();
+  for (let i = 0; i < props.length; i++) {
+    prop.onEnd(props[i].subscribe(x => {
+      prop.next(x.value, x.error);
+    }));
+  }
+  return prop;
+}

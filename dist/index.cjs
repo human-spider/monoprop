@@ -62,6 +62,7 @@ __export(src_exports, {
   into: () => into,
   map: () => map,
   mapUniq: () => mapUniq,
+  merge: () => merge,
   mergeEvent: () => mergeEvent,
   mergePromise: () => mergePromise,
   not: () => not,
@@ -240,6 +241,15 @@ var mapUniq = (prop, mapper) => {
     return newValue;
   });
   return derived;
+};
+var merge = (...props) => {
+  const prop = Prop.pending();
+  for (let i = 0; i < props.length; i++) {
+    prop.onEnd(props[i].subscribe((x) => {
+      prop.next(x.value, x.error);
+    }));
+  }
+  return prop;
 };
 
 // src/helpers.ts
@@ -474,7 +484,7 @@ var fromPromise = (promise) => {
 var mergePromise = (prop, promise) => {
   promise.then((value) => {
     prop.next(value);
-  }).catch((error) => {
+  }, (error) => {
     if (error instanceof Error) {
       prop.setError(error);
     } else {
@@ -484,30 +494,36 @@ var mergePromise = (prop, promise) => {
 };
 
 // src/event.ts
-var import_throttle_debounce = require("throttle-debounce");
+var emitterKinds = {
+  dom: ["addEventListener", "removeEventListener"],
+  onoff: ["on", "off"],
+  node: ["addListener", "removeListener"]
+};
 var fromEvent = (target, eventName, options = {}) => {
   const prop = Prop.pending();
   mergeEvent(prop, target, eventName, options);
   return prop;
 };
-var mergeEvent = (bus, target, eventName, options = {}) => {
-  let callback;
-  if (options.transform && typeof options.transform === "function") {
-    callback = (event) => {
-      bus.next(options.transform(event));
-    };
-  } else {
-    callback = (event) => {
-      bus.next(event);
-    };
-  }
-  if (options.debounce && Number(options.debounce) > 0) {
-    callback = (0, import_throttle_debounce.debounce)(options.debounce, callback, { atBegin: !!options.debounceLeading });
-  } else if (options.throttle && Number(options.throttle) > 0) {
-    callback = (0, import_throttle_debounce.throttle)(options.throttle, callback);
-  }
-  bus.onEnd(() => {
-    target.removeEventListener(eventName, callback);
+var mergeEvent = (prop, target, eventName, options = {}) => {
+  const mapFn = options.map || ((x) => x);
+  const wrapFn = options.wrap || ((x) => x);
+  const callback = wrapFn((event) => {
+    const value = mapFn(event);
+    if (value !== void 0) {
+      prop.next(event);
+    }
   });
-  target.addEventListener(eventName, callback);
+  mergeEmitter(prop, target, eventName, callback);
 };
+var mergeEmitter = (prop, target, eventName, callback) => {
+  for (let kind in emitterKinds) {
+    if (isEmitterKind(target, kind)) {
+      const [onMethod, offMethod] = emitterKinds[kind];
+      prop.onEnd(() => {
+        target[offMethod](eventName, callback);
+      });
+      target[onMethod](eventName, callback);
+    }
+  }
+};
+var isEmitterKind = (target, kind) => emitterKinds[kind].every((key) => target[key] instanceof Function);

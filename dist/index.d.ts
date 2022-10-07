@@ -49,6 +49,7 @@ declare module "operations" {
     export const filter: <T>(prop: Prop<T>, filterFn: (value: PropValue<T>) => boolean) => Prop<T>;
     export const uniq: <T>(prop: Prop<T>) => Prop<T>;
     export const mapUniq: <T, K>(prop: Prop<T>, mapper: PropMapper<T, K>) => Prop<K>;
+    export const merge: <T>(...props: Prop<T>[]) => Prop<T>;
 }
 declare module "binding" {
     import { Prop } from "prop";
@@ -108,14 +109,21 @@ declare module "composition" {
 }
 declare module "event" {
     import { Prop } from "prop";
+    import type { Maybe } from "helpers";
     type useEventOptions = {
-        throttle?: number;
-        debounce?: number;
-        debounceLeading?: boolean;
-        transform?: (e: Event) => any;
+        map?: (event: Event) => Maybe<Event>;
+        wrap?: <T extends Function>(callback: T) => T;
     };
-    export const fromEvent: (target: Node, eventName: string, options?: useEventOptions) => Prop<Event>;
-    export const mergeEvent: <T extends Event>(bus: Prop<T>, target: Node, eventName: string, options?: useEventOptions) => void;
+    const emitterKinds: {
+        dom: string[];
+        onoff: string[];
+        node: string[];
+    };
+    type EmitterLike<T extends keyof typeof emitterKinds> = Object & {
+        [K in typeof emitterKinds[T][number]]: Function;
+    };
+    export const fromEvent: (target: EmitterLike<any>, eventName: string, options?: useEventOptions) => Prop<Event>;
+    export const mergeEvent: <T extends Event>(prop: Prop<T>, target: EmitterLike<any>, eventName: string, options?: useEventOptions) => void;
 }
 declare module "promise" {
     import { Prop } from "prop";
