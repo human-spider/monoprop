@@ -1,3 +1,4 @@
+import { PendingPropError } from './../src/prop';
 import test from 'ava'
 import { Prop, PropValue, filter, map, uniq, mapUniq } from "../src/index.js"
 
@@ -69,7 +70,7 @@ test('subscribe with no initial notification', t => {
   t.is(notified!.unwrap(), 1, 'subscriber was not notified of updated value with immediate notification disabled')
 })
 
-test('pending Prop does not notify subscribers', t => {
+test('pending Prop does not notify subscribers and returns last value with PendingPropError', t => {
   let notified = -1
   let error
   const prop = Prop.pending<number>()
@@ -79,6 +80,8 @@ test('pending Prop does not notify subscribers', t => {
   })
   t.is(notified, -1)
   t.is(error, undefined)
+  t.is(prop.last.value, undefined as any)
+  t.true(prop.last.error instanceof PendingPropError)
   prop.set(1)
   t.is(notified, 1)
   t.is(error, null)

@@ -31,6 +31,8 @@ interface PropCallback<T> {
   (propValue: PropValue<T>): void
 }
 
+export class PendingPropError extends Error {}
+
 export class Prop<T> {
     #callbacks: { [key: number]: PropCallback<T> } = {};
     #endCallbacks: Function[] = [];
@@ -40,7 +42,7 @@ export class Prop<T> {
     #initialized: boolean = false
   
     static pending<T>(): Prop<T> {
-      return new Prop<T>(undefined, null, false);
+      return new Prop<T>(undefined, new PendingPropError(), false);
     }
   
     constructor(value: Maybe<T>, error: Nullable<Error> = null, initialize = true) {

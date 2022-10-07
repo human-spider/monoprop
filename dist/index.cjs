@@ -50,6 +50,7 @@ var __privateMethod = (obj, member, method) => {
 var src_exports = {};
 __export(src_exports, {
   DictError: () => DictError,
+  PendingPropError: () => PendingPropError,
   Prop: () => Prop,
   PropValue: () => PropValue,
   bind: () => bind,
@@ -102,6 +103,8 @@ var PropValue = class {
 };
 _value = new WeakMap();
 _error = new WeakMap();
+var PendingPropError = class extends Error {
+};
 var _callbacks, _endCallbacks, _ended, _subscriberCount, _last, _initialized, _runCallbacks, runCallbacks_fn, _runCallback, runCallback_fn;
 var _Prop = class {
   constructor(value, error = null, initialize = true) {
@@ -119,7 +122,7 @@ var _Prop = class {
     __privateSet(this, _initialized, initialize);
   }
   static pending() {
-    return new _Prop(void 0, null, false);
+    return new _Prop(void 0, new PendingPropError(), false);
   }
   get last() {
     return __privateGet(this, _last);

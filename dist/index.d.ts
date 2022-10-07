@@ -18,6 +18,8 @@ declare module "prop" {
     interface PropCallback<T> {
         (propValue: PropValue<T>): void;
     }
+    export class PendingPropError extends Error {
+    }
     export class Prop<T> {
         #private;
         static pending<T>(): Prop<T>;
