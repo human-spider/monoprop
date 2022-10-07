@@ -452,7 +452,6 @@
   // src/event.ts
   var emitterKinds = {
     dom: ["addEventListener", "removeEventListener"],
-    onoff: ["on", "off"],
     node: ["addListener", "removeListener"]
   };
   var fromEvent = (target, eventName, options = {}) => {
@@ -463,24 +462,37 @@
   var mergeEvent = (prop, target, eventName, options = {}) => {
     const mapFn = options.map || ((x) => x);
     const wrapFn = options.wrap || ((x) => x);
-    const callback = wrapFn((event) => {
-      const value = mapFn(event);
-      if (value !== void 0) {
-        prop.next(event);
-      }
-    });
-    mergeEmitter(prop, target, eventName, callback);
+    const emitterKind = getEmitterKind(target);
+    const callback = getCallbackForEmitterKind(prop, emitterKind, mapFn, wrapFn);
+    mergeEmitter(prop, target, emitterKind, eventName, callback);
   };
-  var mergeEmitter = (prop, target, eventName, callback) => {
+  var mergeEmitter = (prop, target, kind, eventName, callback) => {
+    const [onMethod, offMethod] = emitterKinds[kind];
+    prop.onEnd(() => {
+      target[offMethod](eventName, callback);
+    });
+    target[onMethod](eventName, callback);
+  };
+  var getEmitterKind = (target) => {
     for (let kind in emitterKinds) {
       if (isEmitterKind(target, kind)) {
-        const [onMethod, offMethod] = emitterKinds[kind];
-        prop.onEnd(() => {
-          target[offMethod](eventName, callback);
-        });
-        target[onMethod](eventName, callback);
+        return kind;
       }
     }
+    throw new TypeError(`target is not emitter like`);
   };
   var isEmitterKind = (target, kind) => emitterKinds[kind].every((key) => target[key] instanceof Function);
+  var getCallbackForEmitterKind = (prop, emitterKind, mapFn, wrapFn) => {
+    if (emitterKind === "dom") {
+      return wrapFn((event) => {
+        prop.next(mapFn(event));
+      });
+    }
+    if (emitterKind === "node") {
+      return wrapFn((...args) => {
+        prop.next(mapFn(args));
+      });
+    }
+    throw new TypeError(`emitterKind must be one of: ${Object.keys(emitterKinds)}`);
+  };
 })();

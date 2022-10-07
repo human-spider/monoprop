@@ -35,7 +35,7 @@ export const mergeEvent = <T extends EventOrArgumentsArray>(prop: Prop<T>, targe
   mergeEmitter(prop, target, emitterKind, eventName, callback);
 }
 
-const mergeEmitter = <T extends EventOrArgumentsArray>(prop: Prop<T>, target: EmitterLike, kind: keyof typeof emitterKinds, eventName: string, callback: (event: Event) => void): void => {
+const mergeEmitter = <T extends EventOrArgumentsArray>(prop: Prop<T>, target: EmitterLike, kind: keyof typeof emitterKinds, eventName: string, callback: (...args: EventCallbackArgs<T>) => void): void => {
   const [onMethod, offMethod] = emitterKinds[kind]
   prop.onEnd(() => {
     target[offMethod](eventName, callback);

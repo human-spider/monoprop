@@ -114,16 +114,18 @@ declare module "event" {
         map?: (event: Event) => Maybe<Event>;
         wrap?: <T extends Function>(callback: T) => T;
     };
-    const emitterKinds: {
-        dom: string[];
-        onoff: string[];
-        node: string[];
+    type DomEmitter = {
+        addEventListener: Function;
+        removeEventListener: Function;
     };
-    type EmitterLike<T extends keyof typeof emitterKinds> = Object & {
-        [K in typeof emitterKinds[T][number]]: Function;
+    type NodeEmitter = {
+        addListener: Function;
+        removeListener: Function;
     };
-    export const fromEvent: (target: EmitterLike<any>, eventName: string, options?: useEventOptions) => Prop<Event>;
-    export const mergeEvent: <T extends Event>(prop: Prop<T>, target: EmitterLike<any>, eventName: string, options?: useEventOptions) => void;
+    type EmitterLike = DomEmitter | NodeEmitter;
+    type EventOrArgumentsArray = Event | any[];
+    export const fromEvent: <T extends EventOrArgumentsArray>(target: EmitterLike, eventName: string, options?: useEventOptions) => Prop<T>;
+    export const mergeEvent: <T extends EventOrArgumentsArray>(prop: Prop<T>, target: EmitterLike, eventName: string, options?: useEventOptions) => void;
 }
 declare module "promise" {
     import { Prop } from "prop";

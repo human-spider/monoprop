@@ -5,6 +5,7 @@ const config = {
   allowOverwrite: true,
   bundle: true,
   target: 'es2021',
+  // minify: true,
   external: Object.keys(dependencies || {}),
 }
 
