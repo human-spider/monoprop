@@ -34,10 +34,9 @@ interface PropCallback<T> {
 export class PendingPropError extends Error {}
 
 export class Prop<T> {
-  #callbacks: { [key: number]: PropCallback<T> } = {};
+  #callbacks: { [key: symbol]: PropCallback<T> } = {};
   #endCallbacks: Function[] = [];
   #ended = false;
-  #subscriberCount = 0;
   #last: PropValue<T>
   #initialized: boolean = false
 
@@ -86,7 +85,7 @@ export class Prop<T> {
     if (this.#ended) {
       return () => {}
     }
-    const key = String(this.#subscriberCount++);
+    const key = Symbol();
     this.#callbacks[key] = callback;
     if (notifyImmediately) {
       this.#runCallback(key, this.last);
@@ -98,7 +97,7 @@ export class Prop<T> {
 
   watch = this.subscribe
 
-  unsubscribe(key: string): void {
+  unsubscribe(key: symbol): void {
     if (this.#callbacks[key]) {
       delete this.#callbacks[key];      
     }
@@ -110,7 +109,7 @@ export class Prop<T> {
 
   end() {
     this.#ended = true;
-    const keys = Object.keys(this.#callbacks);
+    const keys = Reflect.ownKeys(this.#callbacks) as symbol[];
     for (let i = 0; i < keys.length; i++) {
       this.unsubscribe(keys[i]);
     }
@@ -125,16 +124,16 @@ export class Prop<T> {
   }
 
   get subscriberCount(): number {
-    return Object.keys(this.#callbacks).length;
+    return Reflect.ownKeys(this.#callbacks).length;
   }
 
   #runCallbacks(): void {
-    for (let key in this.#callbacks) {
+    for (let key of Reflect.ownKeys(this.#callbacks) as symbol[]) {
       this.#runCallback(key, this.last)
     }
   }
 
-  #runCallback(key: string, propValue: PropValue<T>): void {
+  #runCallback(key: symbol, propValue: PropValue<T>): void {
     this.#callbacks[key]?.(propValue)
   }
 }
