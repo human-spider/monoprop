@@ -1,4 +1,4 @@
-import { PendingPropError } from './../src/prop';
+import { PendingPropError, fold } from './../src/prop';
 import test from 'ava'
 import { Prop, PropValue, filter, map, uniq, mapUniq } from "../src/index.js"
 
@@ -183,4 +183,35 @@ test('mapping unique prop values', t => {
   t.is(notified, 4, 'subscrber was not notified of unique mapped value');
   mapped.end();
   t.is(prop.subscriberCount, 0, 'callback was not cleared after unsubscribing')
+})
+
+test('fold with subscribe', t => {
+  let notified = -1, error
+  const prop = new Prop(0)
+  prop.subscribe(fold(
+    value => { notified = value },
+    e => { error = e })
+  )
+  t.is(notified, 0, 'value callback was not called')
+  t.is(error, undefined, 'error callback was called without an error')
+  prop.set(1)
+  t.is(notified, 1)
+  prop.setError(new Error())
+  t.true(error instanceof Error)
+})
+
+test('fold with map', t => {
+  let error
+  const prop = new Prop(0)
+  const derived = map(prop, fold(
+    value => value * 2,
+    e => { error = e })
+  )
+  t.is(derived.last.value, 0, 'value callback was not called')
+  t.is(error, undefined, 'error callback was called without an error')
+  prop.set(1)
+  t.is(derived.last.value, 2)
+  prop.setError(new Error())
+  t.is(derived.last.error, null, 'error was passed when using fold with map')
+  t.true(error instanceof Error)
 })
