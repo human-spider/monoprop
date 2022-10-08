@@ -109,7 +109,7 @@ export class Prop<T> {
 
   end() {
     this.#ended = true;
-    const keys = Reflect.ownKeys(this.#callbacks) as symbol[];
+    const keys = Object.getOwnPropertySymbols(this.#callbacks);
     for (let i = 0; i < keys.length; i++) {
       this.unsubscribe(keys[i]);
     }
@@ -124,11 +124,11 @@ export class Prop<T> {
   }
 
   get subscriberCount(): number {
-    return Reflect.ownKeys(this.#callbacks).length;
+    return Object.getOwnPropertySymbols(this.#callbacks).length;
   }
 
   #runCallbacks(): void {
-    for (let key of Reflect.ownKeys(this.#callbacks) as symbol[]) {
+    for (let key of Object.getOwnPropertySymbols(this.#callbacks)) {
       this.#runCallback(key, this.last)
     }
   }
