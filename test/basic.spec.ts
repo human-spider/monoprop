@@ -1,3 +1,4 @@
+import { Nullable } from './../dist/index.d';
 import { PendingPropError, fold, matchError } from './../src/prop';
 import test from 'ava'
 import { Prop, PropValue, filter, map, uniq, mapUniq } from "../src/index.js"
@@ -46,6 +47,14 @@ test('Prop provides methods to set error', t => {
   })
   t.is(prop.last.value, 0, 'value was changed after calling setError')
   t.is(prop.last.error, error2)
+})
+
+test('set wrapped PropValue to Prop', t => {
+  const prop = new Prop(0)
+  const error = new Error()
+  prop.set(new PropValue(1, error))
+  t.is(prop.last.value, 1)
+  t.is(prop.last.error, error)
 })
 
 test('Prop notifies subscribers when value is changed', t => {
@@ -169,6 +178,23 @@ test('mapping props', t => {
   t.is(prop.subscriberCount, 0)
 })
 
+test('returning PropValue from map callback', t => {
+  const prop = new Prop(0)
+  const mapped = map(prop, x => {
+    let value = Math.PI / x.value, error: Nullable<Error> = null
+    if (value === Infinity) {
+      error = new TypeError()
+    }
+    return new PropValue(value, error)
+  })
+  prop.set(2)
+  t.is(mapped.last.value, Math.PI / 2);
+  t.is(mapped.last.error, null)
+  prop.set(0)
+  t.is(mapped.last.value, Infinity);
+  t.true(mapped.last.error instanceof TypeError)
+})
+
 test('mapping unique prop values', t => {
   let notifiedTimes = 0, notified = -1
   const prop = Prop.pending<number>()
@@ -232,12 +258,12 @@ test('matchError', t => {
 test('matchError with map and fold', t => {
   let resultError
   const prop = new Prop(0)
-  const derived = map<number, number>(prop, fold(value => value, matchError([
+  const derived = map(prop, fold(value => value, matchError([
     [TypeError, e => { resultError = e }],
   ])))
   prop.setError(new TypeError())
-  t.true(resultError instanceof TypeError)
+  t.true(resultError instanceof TypeError, 'error handler was not called')
   t.is(derived.last.error, null)
   prop.setError(new EvalError())
-  t.true(derived.last.error instanceof EvalError)
+  t.true(derived.last.error instanceof EvalError, 'error with no handler was not passed through')
 })

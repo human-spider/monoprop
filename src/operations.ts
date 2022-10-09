@@ -3,7 +3,7 @@ import type { PropValue } from './prop'
 import type { Maybe } from './helpers'
 
 export interface PropMapper<T, K> {
-  (propValue: PropValue<T>): Maybe<K>
+  (propValue: PropValue<T>): Maybe<K | PropValue<K>>
 }
 
 export const map = <T, K>(prop: Prop<T>, mapperFn: PropMapper<T, K>): Prop<K> => {
