@@ -57,8 +57,12 @@ export class Prop<T> {
     return this.#initialized;
   }
 
-  next(value: T, error: Nullable<Error> = null): void {
-    this.#last = new PropValue(value, error)
+  next(value: T | PropValue<T>, error: Nullable<Error> = null): void {
+    if (value instanceof PropValue) {
+      this.#last = value
+    } else {
+      this.#last = new PropValue(value, error)
+    }
     this.#initialized = true
     this.#runCallbacks()
   }
@@ -73,7 +77,7 @@ export class Prop<T> {
     this.next(this.last.value, error);
   }
 
-  update(updateFn: (value: T) => T): void {
+  update(updateFn: (value: T) => T | PropValue<T>): void {
     try {
       this.next(updateFn(this.last.value))
     } catch (error) {
