@@ -154,3 +154,17 @@ interface FoldedCallback<T, K> {
 export const fold = <T, K>(onValue: FoldedValueCallback<T, K>, onError?: FoldedErrorCallback<T>): FoldedCallback<T, K> => {
   return propValue => onValue(propValue.unwrap(onError))
 }
+
+type ErrorMatcherMap = [any, (error: Nullable<Error>) => Error | void][]
+interface ErrorHandlerFn {
+  (error: Nullable<Error>): Error | void
+}
+export const matchError = (errorMap: ErrorMatcherMap): ErrorHandlerFn => error => {
+  if (error === null) return
+  for (let [errorKind, handler] of errorMap) {
+    if (errorKind === Error || error instanceof errorKind) {
+      return handler(error)
+    }
+  }
+  throw error
+}

@@ -1,4 +1,4 @@
-import { PendingPropError, fold } from './../src/prop';
+import { PendingPropError, fold, matchError } from './../src/prop';
 import test from 'ava'
 import { Prop, PropValue, filter, map, uniq, mapUniq } from "../src/index.js"
 
@@ -214,4 +214,30 @@ test('fold with map', t => {
   prop.setError(new Error())
   t.is(derived.last.error, null, 'error was passed when using fold with map')
   t.true(error instanceof Error)
+})
+
+test('matchError', t => {
+  let resultError, otherError
+  const errorHandler = matchError([
+    [TypeError, e => { resultError = e }],
+    [Error, e => { otherError = e }]
+  ])
+  new PropValue(undefined, new TypeError()).unwrap(errorHandler)
+  t.true(resultError instanceof TypeError)
+  t.false(otherError instanceof EvalError)
+  new PropValue(undefined, new EvalError()).unwrap(errorHandler)
+  t.true(otherError instanceof EvalError)
+})
+
+test('matchError with map and fold', t => {
+  let resultError
+  const prop = new Prop(0)
+  const derived = map<number, number>(prop, fold(value => value, matchError([
+    [TypeError, e => { resultError = e }],
+  ])))
+  prop.setError(new TypeError())
+  t.true(resultError instanceof TypeError)
+  t.is(derived.last.error, null)
+  prop.setError(new EvalError())
+  t.true(derived.last.error instanceof EvalError)
 })
