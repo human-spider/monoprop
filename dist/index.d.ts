@@ -1,100 +1,159 @@
-declare type PropBindings<T extends object> = {
-    [K in keyof T]: Prop<T[K]>;
-};
-export declare const of: <T extends object>(property: Prop<T>) => PropBindings<T>;
-declare type DeepPropBindings<T extends object> = {
-    [K in keyof T]: T[K] extends object ? DeepPropBindings<T[K]> : {
-        $: Prop<T[K]>;
+declare module "helpers" {
+    export type Nullable<T> = T | null;
+    export type Maybe<T> = T | undefined;
+    export const walkObject: (x: object, basePath: Array<string>, callback: (value: any, path: string[]) => void) => void;
+    export const deepGet: <T extends object>(x: T, path: string[]) => any;
+    export const deepSet: (x: object, path: string[], value: unknown) => void;
+    export const isPlainObject: (obj: any) => obj is Object;
+}
+declare module "prop" {
+    import type { Nullable, Maybe } from "helpers";
+    export class PropValue<T> {
+        #private;
+        constructor(value: Maybe<T>, error: Nullable<Error>);
+        unwrap(errorHandler?: (error: Error) => void): T;
+        get value(): T;
+        get error(): Nullable<Error>;
+    }
+    interface PropCallback<T> {
+        (propValue: PropValue<T>): void;
+    }
+    export class PendingPropError extends Error {
+    }
+    export class Prop<T> {
+        #private;
+        static pending<T>(): Prop<T>;
+        constructor(value: Maybe<T>, error?: Nullable<Error>, initialize?: boolean);
+        get last(): PropValue<T>;
+        get initialized(): boolean;
+        next(value: T | PropValue<T>, error?: Nullable<Error>): void;
+        set: (value: T | PropValue<T>, error?: Nullable<Error>) => void;
+        tap(): void;
+        setError(error: Error): void;
+        update(updateFn: (value: T) => T | PropValue<T>): void;
+        subscribe(callback: PropCallback<T>, notifyImmediately?: boolean): Function;
+        watch: (callback: PropCallback<T>, notifyImmediately?: boolean) => Function;
+        unsubscribe(key: symbol): void;
+        get ended(): boolean;
+        end(): void;
+        onEnd(callback: Function): void;
+        get subscriberCount(): number;
+    }
+    interface FoldedValueCallback<T, K> {
+        (value: T): K;
+    }
+    interface FoldedErrorCallback<T> {
+        (error: Nullable<Error>): void;
+    }
+    interface FoldedCallback<T, K> {
+        (propValue: PropValue<T>): K;
+    }
+    export const fold: <T, K>(onValue: FoldedValueCallback<T, K>, onError?: FoldedErrorCallback<T>) => FoldedCallback<T, K>;
+    type ErrorMatcherMap = [any, (error: Nullable<Error>) => Error | void][];
+    interface ErrorHandlerFn {
+        (error: Nullable<Error>): Error | void;
+    }
+    export const matchError: (errorMap: ErrorMatcherMap) => ErrorHandlerFn;
+}
+declare module "operations" {
+    import { Prop } from "prop";
+    import type { PropValue } from "prop";
+    import type { Maybe } from "helpers";
+    export interface PropMapper<T, K> {
+        (propValue: PropValue<T>): Maybe<K | PropValue<K>>;
+    }
+    export const map: <T, K>(prop: Prop<T>, mapperFn: PropMapper<T, K>) => Prop<K>;
+    export const filter: <T>(prop: Prop<T>, filterFn: (value: PropValue<T>) => boolean) => Prop<T>;
+    export const uniq: <T>(prop: Prop<T>) => Prop<T>;
+    export const mapUniq: <T, K>(prop: Prop<T>, mapper: PropMapper<T, K>) => Prop<K>;
+    export const merge: <T>(...props: Prop<T>[]) => Prop<T>;
+}
+declare module "binding" {
+    import { Prop } from "prop";
+    import type { PropValue } from "prop";
+    import type { PropMapper } from "operations";
+    interface PropUpdater<T, K> {
+        (propValue: T, chunkValue: PropValue<K>): T;
+    }
+    export const bind: <T extends Object, K>(prop: Prop<T>, mapper: PropMapper<T, K>, updater: PropUpdater<T, K>) => Prop<K>;
+    type GetterFn<T extends object, K extends keyof T> = {
+        (value: PropValue<T>): T[K];
     };
-} & {
-    $: Prop<T>;
-};
-export declare const into: <T extends object>(property: Prop<T>) => DeepPropBindings<T>;
-declare type useEventOptions = {
-    throttle?: number;
-    debounce?: number;
-    debounceLeading?: boolean;
-    transform?: (e: Event) => any;
-};
-export declare const fromEvent: (target: Node, eventName: string, options?: useEventOptions) => Prop<Maybe<Event>>;
-export declare const mergeEvent: <T extends Event>(bus: Prop<Maybe<T>>, target: Node, eventName: string, options?: useEventOptions) => void;
-export declare const fromPromise: <T>(promise: Promise<T>) => Prop<Maybe<T>>;
-export declare const mergePromise: <T>(prop: Prop<T>, promise: Promise<T>) => void;
-export declare const asyncUpdate: <T>(prop: Prop<T>, updateFn: (value: Maybe<T>) => Promise<T>) => void;
-export declare const toPromise: <T>(prop: Prop<T>) => Promise<T>;
-export declare const merge: <T>(...props: Prop<T>[]) => Prop<Maybe<T>>;
-declare type PropSubject<T> = T extends Prop<infer K> ? K : never;
-declare type ComposedProp<T> = T extends Prop<any>[] ? Prop<{
-    [K in keyof T]: PropSubject<T[K]>;
-}> : never;
-export declare const compose: <T extends Prop<any>[]>(...props: T) => ComposedProp<T>;
-declare type ObjectWithProps = {
-    [key: string | symbol]: Prop<any> | ObjectWithProps;
-};
-declare type ComposedPropObject<T extends object> = {
-    [K in keyof T]: T[K] extends Prop<infer P> ? P : T[K] extends ObjectWithProps ? ComposedPropObject<T[K]> : never;
-};
-export declare const composeObject: <T extends ObjectWithProps>(template: T) => Prop<ComposedPropObject<T>>;
-export declare const not: (prop: Prop<any>) => Prop<boolean>;
-export declare const every: (...props: Prop<any>[]) => Prop<boolean>;
-export declare const some: (...props: Prop<any>[]) => Prop<boolean>;
-declare type GetterFn<T extends object, K extends keyof T> = {
-    (value: T): T[K];
-};
-declare type SetterFn<T extends object, K extends keyof T> = {
-    (value: T, chunkValue: T[K]): void;
-};
-export declare const get: <T extends object, K extends keyof T>(key: K) => GetterFn<T, K>;
-export declare const set: <T extends object, K extends keyof T>(key: K) => SetterFn<T, K>;
-interface PropCallback<T> {
-    (arg: Definitely<T>): void;
-}
-interface PropMapper<T, K> {
-    (arg: Definitely<T>): Definitely<K>;
-}
-interface PropUpdater<T, K> {
-    (propValue: T, chunkValue: K): void;
-}
-declare type Nullable<T> = T | null;
-declare type Maybe<T> = T | undefined;
-declare type Definitely<T> = T extends Maybe<any> ? Exclude<T, undefined> : T;
-export declare class Prop<T> {
-    protected callbacks: {
-        [key: number]: PropCallback<T>;
+    type SetterFn<T extends object, K extends keyof T> = {
+        (value: T, chunkValue: PropValue<T[K]>): T;
     };
-    protected endCallbacks: Function[];
-    protected ended: boolean;
-    protected currentValue: T;
-    protected initialized: boolean;
-    protected errorProp: Nullable<Prop<Maybe<Nullable<Error>>>>;
-    protected subscriberCount: number;
-    static pending<T>(): Prop<Maybe<T>>;
-    constructor(value: T, initialize?: boolean);
-    set value(value: T);
-    getValue(): T;
-    get value(): T;
-    get isInitialized(): boolean;
-    next(value: Definitely<T>): void;
-    set: (value: Definitely<T>) => void;
-    tap(): void;
-    update(updateFn: (value: T) => void): void;
-    subscribe(callback: PropCallback<T>, notifyImmediately?: boolean): Function;
-    watch: (callback: PropCallback<T>, notifyImmediately?: boolean) => Function;
-    unsubscribe(key: string): void;
-    filter(filterFn: (arg: T) => boolean): Prop<T>;
-    uniq(): Prop<T>;
-    map<K>(mapper: PropMapper<T, K>): Prop<K>;
-    mapUniq<K>(mapper: PropMapper<T, K>): Prop<K>;
-    merge(...props: Prop<T>[]): void;
-    bind<K>(mapper: PropMapper<T, K>, updater: PropUpdater<T, K>): Prop<K>;
-    getError(): Prop<Maybe<Nullable<Error>>>;
-    get error(): Prop<Maybe<Nullable<Error>>>;
-    get isEnded(): boolean;
-    end(): void;
-    onEnd(callback: Function): void;
-    protected setCurrentValue(value: T): void;
-    protected get errorPropInstance(): Prop<Maybe<Nullable<Error>>>;
-    protected runCallback(key: string, value: T): void;
-    protected deriveProp<K>(initialValue?: K): Prop<K>;
+    export const get: <T extends object, K extends keyof T>(key: K) => GetterFn<T, K>;
+    export const set: <T extends object, K extends keyof T>(key: K) => SetterFn<T, K>;
+    type PropBindings<T extends object> = {
+        [K in keyof T]: Prop<T[K]>;
+    };
+    export const of: <T extends object>(property: Prop<T>) => PropBindings<T>;
+    type DeepPropBindings<T extends object> = {
+        [K in keyof T]: T[K] extends object ? DeepPropBindings<T[K]> : {
+            $: Prop<T[K]>;
+        };
+    } & {
+        $: Prop<T>;
+    };
+    export const into: <T extends object>(property: Prop<T>) => DeepPropBindings<T>;
 }
-export {};
+declare module "composition" {
+    import { Prop } from "prop";
+    import type { Maybe } from "helpers";
+    type PropSubject<T> = T extends Prop<infer K> ? K : never;
+    type ComposedPropValues<T> = T extends Prop<any>[] ? {
+        [K in keyof T]: Maybe<PropSubject<T[K]>>;
+    } : never;
+    type ComposedProp<T> = T extends Prop<any>[] ? Prop<ComposedPropValues<T>> : never;
+    export const tuple: <T extends Array<Prop<any>>>(...props: T) => ComposedProp<T>;
+    type ObjectWithProps = {
+        [key: string | symbol]: Prop<any> | ObjectWithProps;
+    };
+    type ComposedPropObject<T extends object> = {
+        [K in keyof T]: T[K] extends Prop<infer P> ? Maybe<P> : T[K] extends ObjectWithProps ? ComposedPropObject<T[K]> : never;
+    };
+    type DictErrors<T extends object> = {
+        [K in keyof T]: T[K] extends Prop<infer P> ? P : T[K] extends ObjectWithProps ? ComposedPropObject<T[K]> : never;
+    };
+    export class DictError<T extends Object> extends Error {
+        errors: DictErrors<T>;
+        constructor(errors: DictErrors<T>, message?: string);
+    }
+    export const dict: <T extends ObjectWithProps>(template: T) => Prop<ComposedPropObject<T>>;
+    export const not: (prop: Prop<any>) => Prop<boolean>;
+    export const every: (...props: Prop<any>[]) => Prop<boolean>;
+    export const some: (...props: Prop<any>[]) => Prop<boolean>;
+}
+declare module "event" {
+    import { Prop } from "prop";
+    import type { Maybe } from "helpers";
+    type useEventOptions = {
+        map?: (event: Event) => Maybe<Event>;
+        wrap?: <T extends Function>(callback: T) => T;
+    };
+    type DomEmitter = {
+        addEventListener: Function;
+        removeEventListener: Function;
+    };
+    type NodeEmitter = {
+        addListener: Function;
+        removeListener: Function;
+    };
+    type EmitterLike = DomEmitter | NodeEmitter;
+    type EventOrArgumentsArray = Event | any[];
+    export const fromEvent: <T extends EventOrArgumentsArray>(target: EmitterLike, eventName: string, options?: useEventOptions) => Prop<T>;
+    export const mergeEvent: <T extends EventOrArgumentsArray>(prop: Prop<T>, target: EmitterLike, eventName: string, options?: useEventOptions) => void;
+}
+declare module "promise" {
+    import { Prop } from "prop";
+    export const fromPromise: <T>(promise: Promise<T>) => Prop<T>;
+    export const mergePromise: <T>(prop: Prop<T>, promise: Promise<T>) => void;
+}
+declare module "index" {
+    export * from "prop";
+    export * from "operations";
+    export * from "composition";
+    export * from "binding";
+    export * from "promise";
+    export * from "event";
+}

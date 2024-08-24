@@ -1,126 +1,222 @@
-// src/index.ts
-import { throttle, debounce } from "throttle-debounce";
-function isPlainObject(obj) {
-  if (!obj)
-    return false;
-  const prototype = Object.getPrototypeOf(obj);
-  return prototype === null || prototype.constructor === Object;
-}
-var bindingsCache = /* @__PURE__ */ new WeakMap();
-var deepBindingsCache = /* @__PURE__ */ new WeakMap();
-var of = (property) => {
-  let proxy = bindingsCache.get(property);
-  if (!proxy) {
-    const propCache = {};
-    proxy = new Proxy(propCache, {
-      get(target, prop, receiver) {
-        let prop$;
-        if (target.hasOwnProperty(prop)) {
-          prop$ = Reflect.get(target, prop, receiver);
-        }
-        const propName = String(prop);
-        if (!prop$ || prop$.isEnded) {
-          prop$ = property.bind(get(propName), set(propName));
-          propCache[propName] = prop$;
-        }
-        return prop$;
-      }
-    });
-    bindingsCache.set(property, proxy);
-  }
-  return proxy;
+var __accessCheck = (obj, member, msg) => {
+  if (!member.has(obj))
+    throw TypeError("Cannot " + msg);
 };
-var into = (property) => {
-  let proxy = deepBindingsCache.get(property);
-  let path = [];
-  if (!proxy) {
-    const propCache = {};
-    proxy = new Proxy(propCache, {
-      get(target, prop) {
-        const propName = String(prop);
-        if (propName === "$") {
-          const cacheKey = "." + path.join(".");
-          let cached = propCache[cacheKey];
-          if (!cached || cached.isEnded) {
-            const localPath = [...path];
-            propCache[cacheKey] = property.bind(
-              (value) => deepGet(value, localPath),
-              (value, chunk) => deepSet(value, localPath, chunk)
-            );
-          }
-          path.length = 0;
-          return propCache[cacheKey];
-        } else {
-          path.push(propName);
-          return proxy;
-        }
-      }
-    });
-    deepBindingsCache.set(property, proxy);
-  }
-  return proxy;
+var __privateGet = (obj, member, getter) => {
+  __accessCheck(obj, member, "read from private field");
+  return getter ? getter.call(obj) : member.get(obj);
 };
-var fromEvent = (target, eventName, options = {}) => {
-  const prop = Prop.pending();
-  mergeEvent(prop, target, eventName, options);
-  return prop;
+var __privateAdd = (obj, member, value) => {
+  if (member.has(obj))
+    throw TypeError("Cannot add the same private member more than once");
+  member instanceof WeakSet ? member.add(obj) : member.set(obj, value);
 };
-var mergeEvent = (bus, target, eventName, options = {}) => {
-  let callback;
-  if (options.transform && typeof options.transform === "function") {
-    callback = (event) => {
-      bus.next(options.transform(event));
-    };
-  } else {
-    callback = (event) => {
-      bus.next(event);
-    };
-  }
-  if (options.debounce && Number(options.debounce) > 0) {
-    callback = debounce(options.debounce, callback, { atBegin: !!options.debounceLeading });
-  } else if (options.throttle && Number(options.throttle) > 0) {
-    callback = throttle(options.throttle, callback);
-  }
-  bus.onEnd(() => {
-    target.removeEventListener(eventName, callback);
-  });
-  target.addEventListener(eventName, callback);
+var __privateSet = (obj, member, value, setter) => {
+  __accessCheck(obj, member, "write to private field");
+  setter ? setter.call(obj, value) : member.set(obj, value);
+  return value;
 };
-var fromPromise = (promise) => {
-  const prop = Prop.pending();
-  mergePromise(prop, promise);
-  return prop;
+var __privateMethod = (obj, member, method) => {
+  __accessCheck(obj, member, "access private method");
+  return method;
 };
-var mergePromise = (prop, promise) => {
-  promise.then((value) => {
-    prop.next(value);
-    prop.error.next(null);
-  }).catch((error) => {
-    if (error instanceof Error) {
-      prop.error.next(error);
-    } else {
-      prop.error.next(new Error(error));
+
+// src/prop.ts
+var _value, _error;
+var PropValue = class {
+  constructor(value, error) {
+    __privateAdd(this, _value, void 0);
+    __privateAdd(this, _error, void 0);
+    if (value !== void 0) {
+      __privateSet(this, _value, value);
     }
+    __privateSet(this, _error, error);
+  }
+  unwrap(errorHandler = (error) => {
+    throw error;
+  }) {
+    if (this.error) {
+      errorHandler(this.error);
+    }
+    return this.value;
+  }
+  get value() {
+    return __privateGet(this, _value);
+  }
+  get error() {
+    return __privateGet(this, _error);
+  }
+};
+_value = new WeakMap();
+_error = new WeakMap();
+var PendingPropError = class extends Error {
+};
+var _callbacks, _endCallbacks, _ended, _last, _initialized, _runCallbacks, runCallbacks_fn, _runCallback, runCallback_fn;
+var _Prop = class {
+  constructor(value, error = null, initialize = true) {
+    __privateAdd(this, _runCallbacks);
+    __privateAdd(this, _runCallback);
+    __privateAdd(this, _callbacks, {});
+    __privateAdd(this, _endCallbacks, []);
+    __privateAdd(this, _ended, false);
+    __privateAdd(this, _last, void 0);
+    __privateAdd(this, _initialized, false);
+    this.set = this.next;
+    this.watch = this.subscribe;
+    __privateSet(this, _last, new PropValue(value, error));
+    __privateSet(this, _initialized, initialize);
+  }
+  static pending() {
+    return new _Prop(void 0, new PendingPropError(), false);
+  }
+  get last() {
+    return __privateGet(this, _last);
+  }
+  get initialized() {
+    return __privateGet(this, _initialized);
+  }
+  next(value, error = null) {
+    if (value instanceof PropValue) {
+      __privateSet(this, _last, value);
+    } else {
+      __privateSet(this, _last, new PropValue(value, error));
+    }
+    __privateSet(this, _initialized, true);
+    __privateMethod(this, _runCallbacks, runCallbacks_fn).call(this);
+  }
+  tap() {
+    __privateMethod(this, _runCallbacks, runCallbacks_fn).call(this);
+  }
+  setError(error) {
+    this.next(this.last.value, error);
+  }
+  update(updateFn) {
+    try {
+      this.next(updateFn(this.last.value));
+    } catch (error) {
+      this.setError(error);
+    }
+  }
+  subscribe(callback, notifyImmediately = __privateGet(this, _initialized)) {
+    if (__privateGet(this, _ended)) {
+      return () => {
+      };
+    }
+    const key = Symbol();
+    __privateGet(this, _callbacks)[key] = callback;
+    if (notifyImmediately) {
+      __privateMethod(this, _runCallback, runCallback_fn).call(this, key, this.last);
+    }
+    return () => {
+      this.unsubscribe(key);
+    };
+  }
+  unsubscribe(key) {
+    if (__privateGet(this, _callbacks)[key]) {
+      delete __privateGet(this, _callbacks)[key];
+    }
+  }
+  get ended() {
+    return __privateGet(this, _ended);
+  }
+  end() {
+    __privateSet(this, _ended, true);
+    const keys = Object.getOwnPropertySymbols(__privateGet(this, _callbacks));
+    for (let i = 0; i < keys.length; i++) {
+      this.unsubscribe(keys[i]);
+    }
+    for (let i = 0; i < __privateGet(this, _endCallbacks).length; i++) {
+      __privateGet(this, _endCallbacks)[i]();
+    }
+    __privateGet(this, _endCallbacks).length = 0;
+  }
+  onEnd(callback) {
+    __privateGet(this, _endCallbacks).push(callback);
+  }
+  get subscriberCount() {
+    return Object.getOwnPropertySymbols(__privateGet(this, _callbacks)).length;
+  }
+};
+var Prop = _Prop;
+_callbacks = new WeakMap();
+_endCallbacks = new WeakMap();
+_ended = new WeakMap();
+_last = new WeakMap();
+_initialized = new WeakMap();
+_runCallbacks = new WeakSet();
+runCallbacks_fn = function() {
+  for (let key of Object.getOwnPropertySymbols(__privateGet(this, _callbacks))) {
+    __privateMethod(this, _runCallback, runCallback_fn).call(this, key, this.last);
+  }
+};
+_runCallback = new WeakSet();
+runCallback_fn = function(key, propValue) {
+  __privateGet(this, _callbacks)[key]?.(propValue);
+};
+var fold = (onValue, onError) => {
+  return (propValue) => onValue(propValue.unwrap(onError));
+};
+var matchError = (errorMap) => (error) => {
+  if (error === null)
+    return;
+  for (let [errorKind, handler] of errorMap) {
+    if (errorKind === Error || error instanceof errorKind) {
+      return handler(error);
+    }
+  }
+  throw error;
+};
+
+// src/operations.ts
+var map = (prop, mapperFn) => {
+  const derived = Prop.pending();
+  derived.onEnd(prop.subscribe((propValue) => {
+    try {
+      const newValue = mapperFn(propValue);
+      if (newValue !== void 0) {
+        derived.next(newValue);
+      }
+    } catch (error) {
+      derived.setError(error);
+    }
+  }));
+  return derived;
+};
+var filter = (prop, filterFn) => {
+  return map(prop, (propValue) => {
+    if (!filterFn(propValue)) {
+      return void 0;
+    }
+    return propValue.unwrap();
   });
 };
-var asyncUpdate = (prop, updateFn) => {
-  mergePromise(prop, updateFn(prop.value));
-};
-var toPromise = (prop) => {
-  return new Promise((resolve, reject) => {
-    const unsub = prop.subscribe((x) => {
-      resolve(x);
-      unsub();
-      errorUnsub();
-    }, false);
-    let errorSkipNext = prop.error.isInitialized;
-    const errorUnsub = prop.error.subscribe((x) => {
-      reject(x);
-      unsub();
-      errorUnsub();
-    }, false);
+var uniq = (prop) => {
+  const derived = filter(prop, (propValue) => {
+    return propValue.value !== derived.last.value;
   });
+  return derived;
 };
+var mapUniq = (prop, mapper) => {
+  const derived = map(prop, (propValue) => {
+    const newValue = mapper(propValue);
+    if (newValue === derived.last.value) {
+      return void 0;
+    }
+    return newValue;
+  });
+  return derived;
+};
+var merge = (...props) => {
+  const prop = Prop.pending();
+  for (let i = 0; i < props.length; i++) {
+    prop.onEnd(props[i].subscribe((x) => {
+      prop.next(x.value, x.error);
+    }));
+  }
+  return prop;
+};
+
+// src/helpers.ts
 var walkObject = (x, basePath, callback) => {
   const keys = Object.keys(x);
   for (let i = 0; i < keys.length; i++) {
@@ -151,250 +247,279 @@ var deepSet = (x, path, value) => {
     deepSet(x[key], rest, value);
   }
 };
-var merge = (...props) => {
-  const prop = Prop.pending();
-  for (let i = 0; i < props.length; i++) {
-    prop.onEnd(props[i].subscribe((x) => {
-      prop.next(x);
-    }));
-  }
-  return prop;
+var isPlainObject = (obj) => {
+  if (!obj)
+    return false;
+  const prototype = Object.getPrototypeOf(obj);
+  return prototype === null || prototype.constructor === Object;
 };
-var compose = (...props) => {
-  const res = [];
+
+// src/composition.ts
+var getAggregateError = (props) => {
+  let errors = [];
   for (let i = 0; i < props.length; i++) {
-    if (props[i] instanceof Prop) {
-      res.push(props[i].value);
-    } else {
-      res.push(props[i]);
+    if (props[i] instanceof Prop && props[i].last.error) {
+      errors[i] = props[i].last.error;
     }
   }
-  const allPending = !props.find((x) => x.isInitialized);
+  if (!errors.length) {
+    return null;
+  }
+  return AggregateError(errors);
+};
+var tuple = (...props) => {
+  const values = [];
+  let initialized = false;
+  for (let i = 0; i < props.length; i++) {
+    if (props[i] instanceof Prop) {
+      values.push(props[i].last.value);
+      initialized ||= props[i].initialized;
+    } else {
+      values.push(props[i]);
+    }
+  }
   let prop;
-  if (allPending) {
-    prop = Prop.pending();
+  if (initialized) {
+    prop = new Prop(values, getAggregateError(props));
   } else {
-    prop = new Prop(res);
+    prop = Prop.pending();
   }
   for (let i = 0; i < props.length; i++) {
     if (props[i] instanceof Prop) {
       props[i].subscribe((x) => {
-        res[i] = x;
-        prop.next(res);
+        values[i] = x.value;
+        prop.next(values, getAggregateError(props));
       });
     }
   }
   return prop;
 };
-var composeObject = (template) => {
-  const res = {}, props = new Array();
+var DictError = class extends Error {
+  constructor(errors, message = "") {
+    super(message);
+    if (!isPlainObject(errors)) {
+      throw new TypeError(`${errors} is not a plain object`);
+    }
+    this.errors = errors;
+  }
+};
+var getDictError = (template) => {
+  let result = {}, errors = [];
   walkObject(template, [], (x, path) => {
     if (x instanceof Prop) {
-      deepSet(res, path, x.value);
-      props.push([path, x]);
+      if (x.last.error) {
+        deepSet(result, path, x.last.error);
+        errors.push(x.last.error);
+      }
+    } else {
+      deepSet(result, path, x);
+    }
+  });
+  if (!errors.length) {
+    return null;
+  }
+  return new DictError(result);
+};
+var dict = (template) => {
+  const res = {}, props = new Array(), paths = [];
+  let initialized = false;
+  walkObject(template, [], (x, path) => {
+    if (x instanceof Prop) {
+      deepSet(res, path, x.last.value);
+      props.push(x);
+      paths.push(path);
+      initialized ||= x.initialized;
     } else {
       deepSet(res, path, x);
     }
   });
-  const allPending = !props.find((x) => x[1].isInitialized);
   let prop;
-  if (allPending) {
-    prop = Prop.pending();
+  if (initialized) {
+    prop = new Prop(res, getDictError(template));
   } else {
-    prop = new Prop(res);
+    prop = Prop.pending();
   }
   for (let i = 0; i < props.length; i++) {
-    props[i][1].subscribe((newValue) => {
-      deepSet(res, props[i][0], newValue);
-      prop.next(res);
+    props[i].subscribe((newValue) => {
+      deepSet(res, paths[i], newValue.value);
+      prop.next(res, getDictError(template));
     });
   }
   return prop;
 };
 var not = (prop) => {
-  return prop.map((x) => !x);
+  return map(prop, (x) => !x.unwrap());
 };
 var every = (...props) => {
-  return compose(...props).map((x) => x.every((x2) => x2));
+  return map(tuple(...props), (x) => x.unwrap().every((x2) => x2));
 };
 var some = (...props) => {
-  return compose(...props).map((x) => x.some((x2) => x2));
+  return map(tuple(...props), (x) => x.unwrap().some((x2) => x2));
 };
-var get = (key) => (value) => value[key];
+
+// src/binding.ts
+var bind = (prop, mapper, updater) => {
+  const derived = mapUniq(prop, mapper);
+  let newValue;
+  prop.onEnd(derived.subscribe((chunkValue) => {
+    try {
+      newValue = updater(prop.last.value, chunkValue);
+    } catch (error) {
+      prop.setError(error);
+    }
+    if (newValue !== void 0) {
+      prop.set(newValue);
+    } else {
+      prop.tap();
+    }
+  }, false));
+  return derived;
+};
+var get = (key) => (value) => value.unwrap()[key];
 var set = (key) => (value, chunkValue) => {
-  if (value[key] !== chunkValue) {
-    value[key] = chunkValue;
-  }
+  value[key] = chunkValue.unwrap();
+  return value;
 };
-var Prop = class {
-  constructor(value, initialize = true) {
-    this.callbacks = {};
-    this.endCallbacks = [];
-    this.ended = false;
-    this.initialized = false;
-    this.errorProp = null;
-    this.subscriberCount = 0;
-    this.set = this.next;
-    this.watch = this.subscribe;
-    if (initialize && value !== void 0) {
-      this.setCurrentValue(value);
-    }
-  }
-  static pending() {
-    return new Prop(void 0, false);
-  }
-  set value(value) {
-    this.next(value);
-  }
-  getValue() {
-    return this.currentValue;
-  }
-  get value() {
-    return this.getValue();
-  }
-  get isInitialized() {
-    return this.initialized;
-  }
-  next(value) {
-    this.setCurrentValue(value);
-    if (this.errorProp !== null && this.errorProp.isInitialized) {
-      this.error.set(null);
-    }
-    for (let key in this.callbacks) {
-      this.runCallback(key, value);
-    }
-  }
-  tap() {
-    if (this.isInitialized) {
-      this.next(this.currentValue);
-    }
-  }
-  update(updateFn) {
-    updateFn(this.currentValue);
-    this.tap();
-  }
-  subscribe(callback, notifyImmediately = true) {
-    if (this.ended) {
-      return () => {
-      };
-    }
-    const key = String(this.subscriberCount++);
-    this.callbacks[key] = callback;
-    if (notifyImmediately) {
-      this.runCallback(key, this.currentValue);
-    }
-    return () => {
-      this.unsubscribe(key);
-    };
-  }
-  unsubscribe(key) {
-    if (this.callbacks[key]) {
-      delete this.callbacks[key];
-    }
-  }
-  filter(filterFn) {
-    const prop = this.deriveProp();
-    prop.onEnd(this.subscribe((value) => {
-      if (filterFn(value)) {
-        prop.next(value);
+var bindingsCache = /* @__PURE__ */ new WeakMap();
+var deepBindingsCache = /* @__PURE__ */ new WeakMap();
+var of = (property) => {
+  let proxy = bindingsCache.get(property);
+  if (!proxy) {
+    const propCache = {};
+    proxy = new Proxy(propCache, {
+      get(target, prop, receiver) {
+        let prop$;
+        if (target.hasOwnProperty(prop)) {
+          prop$ = Reflect.get(target, prop, receiver);
+        }
+        const propName = String(prop);
+        if (!prop$ || prop$.ended) {
+          prop$ = bind(property, get(propName), set(propName));
+          propCache[propName] = prop$;
+        }
+        return prop$;
       }
-    }));
-    return prop;
+    });
+    bindingsCache.set(property, proxy);
   }
-  uniq() {
-    const prop = this.deriveProp(this.currentValue);
-    prop.onEnd(this.subscribe((value) => {
-      if (prop.value !== value) {
-        prop.next(value);
+  return proxy;
+};
+var into = (property) => {
+  let proxy = deepBindingsCache.get(property);
+  let path = [];
+  if (!proxy) {
+    const propCache = {};
+    proxy = new Proxy(propCache, {
+      get(target, prop) {
+        const propName = String(prop);
+        if (propName === "$") {
+          const cacheKey = "." + path.join(".");
+          let cached = propCache[cacheKey];
+          if (!cached || cached.ended) {
+            const localPath = [...path];
+            propCache[cacheKey] = bind(
+              property,
+              (value) => deepGet(value.unwrap(), localPath),
+              (value, chunk) => {
+                deepSet(value, localPath, chunk.unwrap());
+                return value;
+              }
+            );
+          }
+          path.length = 0;
+          return propCache[cacheKey];
+        } else {
+          path.push(propName);
+          return proxy;
+        }
       }
-    }));
-    return prop;
+    });
+    deepBindingsCache.set(property, proxy);
   }
-  map(mapper) {
-    const prop = this.deriveProp();
-    prop.onEnd(this.subscribe((value) => prop.next(mapper(value))));
-    return prop;
-  }
-  mapUniq(mapper) {
-    const prop = this.deriveProp();
-    prop.onEnd(this.subscribe((value) => {
-      const newValue = mapper(value);
-      if (prop.value !== newValue) {
-        prop.next(newValue);
-      }
-    }));
-    return prop;
-  }
-  merge(...props) {
-    for (let i = 0; i < props.length; i++) {
-      this.onEnd(props[i].subscribe((x) => {
-        this.next(x);
-      }));
+  return proxy;
+};
+
+// src/promise.ts
+var fromPromise = (promise) => {
+  const prop = Prop.pending();
+  mergePromise(prop, promise);
+  return prop;
+};
+var mergePromise = (prop, promise) => {
+  promise.then((value) => {
+    prop.next(value);
+  }, (error) => {
+    if (error instanceof Error) {
+      prop.setError(error);
+    } else {
+      prop.setError(new Error(error));
+    }
+  });
+};
+
+// src/event.ts
+var emitterKinds = {
+  dom: ["addEventListener", "removeEventListener"],
+  node: ["addListener", "removeListener"]
+};
+var fromEvent = (target, eventName, options = {}) => {
+  const prop = Prop.pending();
+  mergeEvent(prop, target, eventName, options);
+  return prop;
+};
+var mergeEvent = (prop, target, eventName, options = {}) => {
+  const mapFn = options.map || ((x) => x);
+  const wrapFn = options.wrap || ((x) => x);
+  const emitterKind = getEmitterKind(target);
+  const callback = getCallbackForEmitterKind(prop, emitterKind, mapFn, wrapFn);
+  mergeEmitter(prop, target, emitterKind, eventName, callback);
+};
+var mergeEmitter = (prop, target, kind, eventName, callback) => {
+  const [onMethod, offMethod] = emitterKinds[kind];
+  prop.onEnd(() => {
+    target[offMethod](eventName, callback);
+  });
+  target[onMethod](eventName, callback);
+};
+var getEmitterKind = (target) => {
+  for (let kind in emitterKinds) {
+    if (isEmitterKind(target, kind)) {
+      return kind;
     }
   }
-  bind(mapper, updater) {
-    const prop = this.mapUniq(mapper);
-    this.onEnd(prop.subscribe((x) => {
-      this.update((value) => {
-        updater(value, x);
-      });
-    }));
-    return prop;
+  throw new TypeError(`target is not emitter like`);
+};
+var isEmitterKind = (target, kind) => emitterKinds[kind].every((key) => target[key] instanceof Function);
+var getCallbackForEmitterKind = (prop, emitterKind, mapFn, wrapFn) => {
+  if (emitterKind === "dom") {
+    return wrapFn((event) => {
+      prop.next(mapFn(event));
+    });
   }
-  getError() {
-    return this.errorPropInstance;
+  if (emitterKind === "node") {
+    return wrapFn((...args) => {
+      prop.next(mapFn(args));
+    });
   }
-  get error() {
-    return this.getError();
-  }
-  get isEnded() {
-    return this.ended;
-  }
-  end() {
-    this.ended = true;
-    const keys = Object.keys(this.callbacks);
-    for (let i = 0; i < keys.length; i++) {
-      this.unsubscribe(keys[i]);
-    }
-    for (let i = 0; i < this.endCallbacks.length; i++) {
-      this.endCallbacks[i]();
-    }
-    this.endCallbacks.length = 0;
-  }
-  onEnd(callback) {
-    this.endCallbacks.push(callback);
-  }
-  setCurrentValue(value) {
-    this.initialized = true;
-    if (this.currentValue !== value) {
-      this.currentValue = value;
-    }
-  }
-  get errorPropInstance() {
-    if (!this.errorProp) {
-      this.errorProp = Prop.pending();
-    }
-    return this.errorProp;
-  }
-  runCallback(key, value) {
-    if (this.initialized && this.callbacks[key]) {
-      this.callbacks[key](value);
-    }
-  }
-  deriveProp(initialValue = void 0) {
-    return new Prop(initialValue, this.initialized);
-  }
+  throw new TypeError(`emitterKind must be one of: ${Object.keys(emitterKinds)}`);
 };
 export {
+  DictError,
+  PendingPropError,
   Prop,
-  asyncUpdate,
-  compose,
-  composeObject,
+  PropValue,
+  bind,
+  dict,
   every,
+  filter,
+  fold,
   fromEvent,
   fromPromise,
   get,
   into,
+  map,
+  mapUniq,
+  matchError,
   merge,
   mergeEvent,
   mergePromise,
@@ -402,5 +527,6 @@ export {
   of,
   set,
   some,
-  toPromise
+  tuple,
+  uniq
 };

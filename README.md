@@ -16,118 +16,138 @@ To create a reactive value, wrap it in a `Prop`.
   const prop = new Prop(0)
 ```
 
-Prop always holds its latest value.
+Prop always holds its latest value, available by accessing the `last` property.
 
 ```ts
-  console.log(prop.value) // prints 0
+  console.log(prop.last.unwrap()) // prints 0
 ```
 
 Define side effects using `subscribe` method. A function you pass to this method will be called every time Prop receives new value.
 
 ```ts
   // print value to console every time it changes
-  prop.subscribe(value => console.log(value))
+  prop.subscribe(value => console.log(value.unwrap()))
 ```
 
-Assign new value to a Prop simply by assigning to `value` property.
+Assign new value to a Prop using `set` and `update` methods
 
 ```ts
-  prop.value = 1 // prints 1
+  prop.set(1) // prints 1
+  prop.update(value => value + 1) // prints 2
 ```
 
-Create derived Props with `map` and `filter` methods.
+Create derived Props with `map` and `filter` functions.
 
 ```ts
   // create Prop that receives modified value returned by the function
-  const squared = prop.map(value => value * value)
+  const squared = map(prop, value => Math.pow(value.unwrap(), 2))
 
   // create Prop that receives only values for which the function returns true
-  const onlyPositive = prop.filter(value => value > 0)
+  const onlyPositive = filter(prop, value => value.unwrap() > 0)
 ```
 
-This is it for the basics of Monoprop. There's no book to read. Of course, this functionality alone is not enough to cover the needs of a modern application. Monoprop builds upon these simple blocks to provide many more convenient features, aiming to claim middle ground between minimalistic patterns such as React's `useState` hook and rich functional libraries that turn your code into abstract algebra. Let's take a look at more advanced features of Monoprop.
+This is it for the basics of Monoprop. There's no book to read. Of course, this functionality alone is not enough to cover the needs of a modern application. Monoprop builds upon these simple blocks to provide many more convenient features, aiming to claim the middle ground between minimalistic patterns such as React's `useState` hook and rich functional libraries like RxJS that turn your code into abstract algebra. Now let's take a deeper look at Monoprop's features.
 
 ## Errors
 
-Every `Prop` comes with built in error handling in form of `error` property, which is also a Prop.
+Monoprop is built with error handling in mind. When you update a Prop it wraps the value in a special `PropValue` wrapper that also optionally holds an error. From here you have several ways to check for and handle the error.
+
+Get value and error using object destructuring.
+```ts
+  const { value, error } = prop.last
+```
+
+The `unwrap` method will return the value help by `PropValue`. If error is present, `unwrap` will throw the error instead. If you pass an optional callback function to the `unwrap` method, it will be called on error instead of throwing.
+```ts
+  const value = prop.last.unwrap() // throws the error if present
+  const value = prop.last.unwrap(console.error) // logs the error to console instead of throwing it
+```
+
+You can set the error by passing it as an optional second argument to `set` method.
+```ts
+  const divider = new Prop(0)
+  const divisionResult = new Prop(0)
+  divider.subscribe(x => {
+    const value = x.value
+    if (value === 0) {
+      divisionResult.set(Math.Infinity, new Error('Division by zero!'))
+    } else {
+      divisionResult.set(Math.PI / value)
+    }
+  })
+```
+
+If you are making a derived Prop using function like `map` or `filter`, any error thrown inside the callback will be automatically caught and passed to the resulting Prop. So the above example simplifies to the following.
+```ts
+  const divider = new Prop(0)
+  const divisionResult = map(prop, x => {
+    const value = x.unwrap()
+    if (value === 0) {
+      throw new Error('Division by zero!')
+    }
+    return Math.PI / value
+  })
+```
+
+Note that when you call `unwrap` inside `map` callback, the error is automatically passed to the derived prop. This means that you don't have to worry about handling errors every time you make a derived Prop. In the above example, if `divider` Prop held an error, it will be passed to the `divisionResult` prop when we unwrap its value, and the division result will not be calculated (since the value is probably not valid).
+
+Another way to handle errors in callbacks is `fold` function, which takes a callback receiving a PropValue and produces a function that takes two callbacks - one receiving unwrapped value and one receiving error.
 
 ```ts
   const divider = new Prop(0)
   const divisionResult = new Prop(0)
-  divider.subscribe(value => {
+  divider.subscribe(fold(value => {
     if (value === 0) {
-      divisionResult.error.value = new Error('Division by zero!')
-      divisionResult.value = Math.Infinity
+      divisionResult.set(Math.Infinity, new Error('Division by zero!'))
     } else {
-      divisionResult.value = Math.PI / value
+      divisionResult.set(Math.PI / value)
+    }
+  }, console.error)
+
+  // or
+
+  const divisionResult = map(prop, fold(value => {
+    if (value === 0) {
+      throw new Error('Division by zero!')
+    }
+    return Math.PI / value
+  }, console.error)
+```
+
+You can also call `setError` method to push an error to the Prop. In this case the previous prop value will be retained. Throwing an error inside `map` callback in equivalent to calling `setError` on resulting Prop and will also retain its previous value.
+
+```ts
+  const divider = new Prop(0)
+  const divisionResult = new Prop(0)
+  divider.subscribe(x => {
+    const { value, error } = x
+    if (error) {
+      divisionResult.setError(error)
+    } else if (value === 0) {
+      divisionResult.set(Math.Infinity, new Error('Division by zero!'))
+    } else {
+      divisionResult.set(Math.PI / value)
     }
   })
-  divisionResult.error.subscribe(console.error)
 ```
-> Pushing an error to `error` property doesn't update the main value. You decide if you want this to happen. However, pushing a new value to the main property clears the error by setting it to `null`, so you don't have to worry about clearing errors associated with previous values. The `error` child prop does not exist until you first access it, so if you need the error to be completely independent, just use a separate `Prop` to represent it.
 
 ## Composition
 
-So far we have only defined side effects for a single Prop. This can be very limiting, and in real scenarios you will probably want to base your logic on more than one value. The `subscribe` helper function lets you define side effects for multiple Props.
+So far we have only defined side effects for a single Prop. This can be very limiting, and in real scenarios you will probably want to base your logic on more than one value. To enable this, Monoprop features helper functions that allow you to take multiple Props and combine them into a single Prop in a verbose and explicit way.
+
+The `tuple` function takes multiple Props as arguments and returns a Prop wrapping an array of values held by those Props. The resulting Prop will notify its subscribers every time any of the source Props is updated. Once you create a tuple, you can `subscribe` to it, `map` it, and `filter` it just like any Prop.
 
 ```ts
-  subscribe([divisionResult, divisionResult.error], (result, error) => {
-    if (!error && result > 10) {
-      console.log('10 has been surpassed!')
-    }
+  const num = Prop(0)
+  const str = Prop('')
+  const composed = tuple(num, str)
+  composed.subscribe(x => {
+    console.log(x.unwrap()) // prints [0, '']
   })
-
-  // liftError helper simplifies this common pattern
-  subscribe(liftError(divisionResult), (result, error) => {
-    ...
-  })
+  composed.subscribe(fold(([num, str]) => {
+    console.log(x.unwrap()) // prints [0, '']
+  }, console.error))
 ```
-
-You can also map and filter multiple props using `map` and `filter` helper methods that work in a similar fashion.
-
-```ts
-  // this will create a boolean prop that will tell whether 10 has been surpassed yet
-  const is10Surpassed = map(
-    liftError(divisionResult),
-    (result, error) => !error && result > 10
-  )
-
-  // this will create a filtered prop that will return value and error only if 10 has been surpassed
-  const onlyWhen10Surpassed = filter(
-    liftError(divisionResult),
-    (result, error) => !error && result > 10
-  )
-```
-
-All of this works via the `compose` method that takes two or more Props and returns a Prop that updates with a tuple of their current values whenever any of these Props changes. You can use `compose` directly to create reusable composed props.
-
-```ts
-  const results = compose(divisionResult, divisionResult.error)
-  results.subscribe(([result, error]) => {
-    if (error) {
-      handleError(error)
-    } else {
-      displayValue(value)
-    }
-  })
-```
-
-Another way to compose props is `composeObject` method that works in a similar way, but using the object structure.
-
-```ts
-  const results = composeObject({
-    result: divisionResult,
-    error: divisionResult.error
-  })
-  results.subscribe(({result, error}) => {
-    if (error) {
-      handleError(error)
-    } else {
-      displayValue(value)
-    }
-  })
-```
-These helpers allow you to easily build global (or semi-global) tracked state from any number of reactive pieces. But you can also choose to go top-down - Monoprop provides powerful methods to help you work with objects.
 
 ## Objects and two-way binding
 
