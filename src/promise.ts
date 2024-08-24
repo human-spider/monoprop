@@ -1,4 +1,4 @@
-import { Prop } from "./prop";
+import { Prop } from "./prop.ts";
 
 export const fromPromise = <T>(promise: Promise<T>): Prop<T> => {
   const prop = Prop.pending<T>();

@@ -1,6 +1,6 @@
-import { Prop } from './prop'
-import type { PropValue } from './prop'
-import type { Maybe } from './helpers'
+import { Prop } from './prop.ts'
+import type { PropValue } from './prop.ts'
+import type { Maybe } from './helpers.ts'
 
 export interface PropMapper<T, K> {
   (propValue: PropValue<T>): Maybe<K | PropValue<K>>

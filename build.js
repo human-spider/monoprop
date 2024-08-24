@@ -1,4 +1,5 @@
 const esbuild = require('esbuild');
+const { transformExtPlugin } = require("@gjsify/esbuild-plugin-transform-ext");
 const { dependencies } = require('./package.json')
 
 const config = {
@@ -11,6 +12,7 @@ const config = {
 
 // build for iife
 esbuild.build({
+  plugins: [transformExtPlugin({ outExtension: {'.ts': '.js'}})],
   ...config,
   entryPoints: ['./src/index.ts'],
   outfile: './dist/index.js',
@@ -20,6 +22,7 @@ esbuild.build({
     
 // build for esm
 esbuild.build({
+  plugins: [transformExtPlugin({ outExtension: {'.ts': '.js'}})],
   ...config,
   entryPoints: ['./src/index.ts'],
   outfile: './dist/index.mjs',
@@ -29,6 +32,7 @@ esbuild.build({
 
     // build for node
 esbuild.build({
+  plugins: [transformExtPlugin({ outExtension: {'.ts': '.js'}})],
   ...config,
   entryPoints: ['./src/index.ts'],
   outfile: './dist/index.cjs',

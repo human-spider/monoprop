@@ -1,4 +1,4 @@
-import type { Nullable, Maybe } from './helpers'
+import type { Nullable, Maybe } from './helpers.ts'
 
 export class PropValue<T> {
   #value: T

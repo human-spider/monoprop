@@ -8,7 +8,8 @@
         "moduleResolution": "Node",
         "strictFunctionTypes": true,
         "noImplicitThis": true,
-        "outFile": "dist/index.ts"
+        "outFile": "dist/index.ts",
+        "allowImportingTsExtensions": true
     },
     "lib": [
         "es2021.promise"

@@ -1,5 +1,5 @@
-import { Prop } from './prop'
-import type { Maybe } from './helpers'
+import { Prop } from './prop.ts'
+import type { Maybe } from './helpers.ts'
 
 type useEventOptions = { 
   map?: (event: Event) => Maybe<Event>,

@@ -26,26 +26,41 @@ declare module "prop" {
         constructor(value: Maybe<T>, error?: Nullable<Error>, initialize?: boolean);
         get last(): PropValue<T>;
         get initialized(): boolean;
-        next(value: T, error?: Nullable<Error>): void;
-        set: (value: T, error?: Nullable<Error>) => void;
+        next(value: T | PropValue<T>, error?: Nullable<Error>): void;
+        set: (value: T | PropValue<T>, error?: Nullable<Error>) => void;
         tap(): void;
         setError(error: Error): void;
-        update(updateFn: (value: T) => T): void;
+        update(updateFn: (value: T) => T | PropValue<T>): void;
         subscribe(callback: PropCallback<T>, notifyImmediately?: boolean): Function;
         watch: (callback: PropCallback<T>, notifyImmediately?: boolean) => Function;
-        unsubscribe(key: string): void;
+        unsubscribe(key: symbol): void;
         get ended(): boolean;
         end(): void;
         onEnd(callback: Function): void;
         get subscriberCount(): number;
     }
+    interface FoldedValueCallback<T, K> {
+        (value: T): K;
+    }
+    interface FoldedErrorCallback<T> {
+        (error: Nullable<Error>): void;
+    }
+    interface FoldedCallback<T, K> {
+        (propValue: PropValue<T>): K;
+    }
+    export const fold: <T, K>(onValue: FoldedValueCallback<T, K>, onError?: FoldedErrorCallback<T>) => FoldedCallback<T, K>;
+    type ErrorMatcherMap = [any, (error: Nullable<Error>) => Error | void][];
+    interface ErrorHandlerFn {
+        (error: Nullable<Error>): Error | void;
+    }
+    export const matchError: (errorMap: ErrorMatcherMap) => ErrorHandlerFn;
 }
 declare module "operations" {
     import { Prop } from "prop";
     import type { PropValue } from "prop";
     import type { Maybe } from "helpers";
     export interface PropMapper<T, K> {
-        (propValue: PropValue<T>): Maybe<K>;
+        (propValue: PropValue<T>): Maybe<K | PropValue<K>>;
     }
     export const map: <T, K>(prop: Prop<T>, mapperFn: PropMapper<T, K>) => Prop<K>;
     export const filter: <T>(prop: Prop<T>, filterFn: (value: PropValue<T>) => boolean) => Prop<T>;
@@ -90,7 +105,7 @@ declare module "composition" {
         [K in keyof T]: Maybe<PropSubject<T[K]>>;
     } : never;
     type ComposedProp<T> = T extends Prop<any>[] ? Prop<ComposedPropValues<T>> : never;
-    export const tuple: <T extends Prop<any>[]>(...props: T) => ComposedProp<T>;
+    export const tuple: <T extends Array<Prop<any>>>(...props: T) => ComposedProp<T>;
     type ObjectWithProps = {
         [key: string | symbol]: Prop<any> | ObjectWithProps;
     };

@@ -1,8 +1,8 @@
-import { Prop } from "./prop";
-import { mapUniq } from "./operations";
-import { deepGet, deepSet } from "./helpers";
-import type { PropValue } from "./prop";
-import type { PropMapper } from './operations'
+import { Prop } from "./prop.ts";
+import { mapUniq } from "./operations.ts";
+import { deepGet, deepSet } from "./helpers.ts";
+import type { PropValue } from "./prop.ts";
+import type { PropMapper } from './operations.ts'
 
 interface PropUpdater<T, K> {
   (propValue: T, chunkValue: PropValue<K>): T

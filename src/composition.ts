@@ -1,8 +1,8 @@
-import { deepSet, walkObject, isPlainObject } from './helpers';
-import { map } from './operations';
-import { Prop } from './prop'
-import type { PropValue } from './prop'
-import type { Maybe, Nullable } from './helpers'
+import { deepSet, walkObject, isPlainObject } from './helpers.ts';
+import { map } from './operations.ts';
+import { Prop } from './prop.ts'
+import type { PropValue } from './prop.ts'
+import type { Maybe, Nullable } from './helpers.ts'
 
 type PropSubject<T> = T extends Prop<infer K> ? K : never
 type ComposedPropValues<T> = T extends Prop<any>[] ?

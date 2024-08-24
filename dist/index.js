@@ -17,14 +17,6 @@
     setter ? setter.call(obj, value) : member.set(obj, value);
     return value;
   };
-  var __privateWrapper = (obj, member, setter, getter) => ({
-    set _(value) {
-      __privateSet(obj, member, value, setter);
-    },
-    get _() {
-      return __privateGet(obj, member, getter);
-    }
-  });
   var __privateMethod = (obj, member, method) => {
     __accessCheck(obj, member, "access private method");
     return method;
@@ -60,7 +52,7 @@
   _error = new WeakMap();
   var PendingPropError = class extends Error {
   };
-  var _callbacks, _endCallbacks, _ended, _subscriberCount, _last, _initialized, _runCallbacks, runCallbacks_fn, _runCallback, runCallback_fn;
+  var _callbacks, _endCallbacks, _ended, _last, _initialized, _runCallbacks, runCallbacks_fn, _runCallback, runCallback_fn;
   var _Prop = class {
     constructor(value, error = null, initialize = true) {
       __privateAdd(this, _runCallbacks);
@@ -68,7 +60,6 @@
       __privateAdd(this, _callbacks, {});
       __privateAdd(this, _endCallbacks, []);
       __privateAdd(this, _ended, false);
-      __privateAdd(this, _subscriberCount, 0);
       __privateAdd(this, _last, void 0);
       __privateAdd(this, _initialized, false);
       this.set = this.next;
@@ -86,7 +77,11 @@
       return __privateGet(this, _initialized);
     }
     next(value, error = null) {
-      __privateSet(this, _last, new PropValue(value, error));
+      if (value instanceof PropValue) {
+        __privateSet(this, _last, value);
+      } else {
+        __privateSet(this, _last, new PropValue(value, error));
+      }
       __privateSet(this, _initialized, true);
       __privateMethod(this, _runCallbacks, runCallbacks_fn).call(this);
     }
@@ -108,7 +103,7 @@
         return () => {
         };
       }
-      const key = String(__privateWrapper(this, _subscriberCount)._++);
+      const key = Symbol();
       __privateGet(this, _callbacks)[key] = callback;
       if (notifyImmediately) {
         __privateMethod(this, _runCallback, runCallback_fn).call(this, key, this.last);
@@ -127,7 +122,7 @@
     }
     end() {
       __privateSet(this, _ended, true);
-      const keys = Object.keys(__privateGet(this, _callbacks));
+      const keys = Object.getOwnPropertySymbols(__privateGet(this, _callbacks));
       for (let i = 0; i < keys.length; i++) {
         this.unsubscribe(keys[i]);
       }
@@ -140,25 +135,37 @@
       __privateGet(this, _endCallbacks).push(callback);
     }
     get subscriberCount() {
-      return Object.keys(__privateGet(this, _callbacks)).length;
+      return Object.getOwnPropertySymbols(__privateGet(this, _callbacks)).length;
     }
   };
   var Prop = _Prop;
   _callbacks = new WeakMap();
   _endCallbacks = new WeakMap();
   _ended = new WeakMap();
-  _subscriberCount = new WeakMap();
   _last = new WeakMap();
   _initialized = new WeakMap();
   _runCallbacks = new WeakSet();
   runCallbacks_fn = function() {
-    for (let key in __privateGet(this, _callbacks)) {
+    for (let key of Object.getOwnPropertySymbols(__privateGet(this, _callbacks))) {
       __privateMethod(this, _runCallback, runCallback_fn).call(this, key, this.last);
     }
   };
   _runCallback = new WeakSet();
   runCallback_fn = function(key, propValue) {
     __privateGet(this, _callbacks)[key]?.(propValue);
+  };
+  var fold = (onValue, onError) => {
+    return (propValue) => onValue(propValue.unwrap(onError));
+  };
+  var matchError = (errorMap) => (error) => {
+    if (error === null)
+      return;
+    for (let [errorKind, handler] of errorMap) {
+      if (errorKind === Error || error instanceof errorKind) {
+        return handler(error);
+      }
+    }
+    throw error;
   };
 
   // src/operations.ts
